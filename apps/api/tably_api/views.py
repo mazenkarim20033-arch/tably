@@ -57,6 +57,9 @@ def public_view(bill: Bill, db: Session) -> dict:
 def admin_view(bill: Bill, db: Session) -> dict:
     view = public_view(bill, db)
     names = {p.id: p.name for p in bill.participants}
+    reminders = {p.id: (p.last_reminded_at, p.reminder_count or 0) for p in bill.participants}
+    for row in view["participants"]:
+        row["last_reminded_at"], row["reminder_count"] = reminders.get(row["id"], (None, 0))
     pays = payments.for_bill(db, bill)
     return {
         **view,
@@ -66,6 +69,8 @@ def admin_view(bill: Bill, db: Session) -> dict:
         "share_expires_at": bill.share_expires_at,
         "printed_total": bill.printed_total,
         "tax_included": bill.tax_included,
+        # Raw receipt figures, so an edit screen can show them even when tax is included in prices.
+        "receipt": {"discounts": bill.discounts, "tax": bill.tax, "service": bill.service, "tip": bill.tip},
         "has_image": bool(bill.image_path),
         "created_at": bill.created_at,
         "payments": [

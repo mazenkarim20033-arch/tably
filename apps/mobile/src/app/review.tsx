@@ -10,8 +10,8 @@ import { Button } from '../components/Button';
 import { AmountField, TextField } from '../components/Fields';
 import { useTheme } from '../theme/ThemeProvider';
 import { updateDraft, useDraft } from '../lib/draftStore';
-import { createBill, MismatchError, uploadImage } from '../lib/billsApi';
-import { loadPayee, savePayee, saveBill } from '../lib/myBills';
+import { ApiProblem, createBill, editReceipt, MismatchError, uploadImage } from '../lib/billsApi';
+import { getAdminToken, loadPayee, savePayee, saveBill } from '../lib/myBills';
 
 export default function Review() {
   const { colors, space, radius } = useTheme();
@@ -45,6 +45,13 @@ export default function Review() {
     if (!draft) return;
     setCreating(true);
     try {
+      if (draft.editBillId) {
+        const token = await getAdminToken(draft.editBillId);
+        if (!token) throw new Error('This phone does not hold the admin key for this bill.');
+        await editReceipt(draft.editBillId, token, draft.receipt, acceptMismatch);
+        router.back();
+        return;
+      }
       const made = await createBill(draft.receipt, acceptMismatch, hasPayee ? payee : undefined);
       if (hasPayee) void savePayee(payee);
       if (draft.imageUri) void uploadImage(made.id, made.admin_token, draft.imageUri);
@@ -57,7 +64,9 @@ export default function Review() {
       router.replace({ pathname: '/share', params: { id: made.id } });
     } catch (e) {
       setCreating(false);
-      if (e instanceof MismatchError) {
+      if (e instanceof ApiProblem && e.code === 'mismatch') {
+        Alert.alert('Totals do not match', 'Your items do not add up to the receipt total. Save anyway using the item total?', [{ text: 'Go back and fix', style: 'cancel' }, { text: 'Use item total', onPress: () => void create(true) }]);
+      } else if (e instanceof MismatchError) {
         Alert.alert(
           'Totals do not match',
           `Your items add up to ${formatAmount(e.computed, draft.receipt.currency)} but the receipt total is ${formatAmount(e.printed, draft.receipt.currency)}. Friends will be asked to split ${formatAmount(e.computed, draft.receipt.currency)}.`,
@@ -87,7 +96,7 @@ export default function Review() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }}>
       <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.md, paddingBottom: 140 }} keyboardShouldPersistTaps="handled">
-        <Text style={{ color: colors.text, fontSize: 28, fontWeight: '700', letterSpacing: -0.6 }}>Review receipt</Text>
+        <Text style={{ color: colors.text, fontSize: 28, fontWeight: '700', letterSpacing: -0.6 }}>{draft.editBillId ? 'Edit receipt' : 'Review receipt'}</Text>
 
         {draft.ocrError && (
           <Text style={{ color: colors.warning }}>Text recognition did not run ({draft.ocrError}) Enter the receipt below.</Text>
@@ -141,12 +150,14 @@ export default function Review() {
           </View>
         )}
 
+        {!draft.editBillId && <>
         <Text style={{ color: colors.text, fontSize: 18, fontWeight: '600', marginTop: space.md }}>Where should friends pay you?</Text>
         <Text style={{ color: colors.textMuted, fontSize: 14 }}>Shown to people with your link. They send money from their own bank app; you confirm each payment yourself. Add at least one of address, phone or link.</Text>
         <TextField label="Your name" value={payeeName} onChange={setPayeeName} placeholder="Shown to friends" />
         <TextField label="InstaPay address" value={ipa} onChange={setIpa} placeholder="name@instapay" autoCapitalize="none" autoCorrect={false} />
         <TextField label="Phone number linked to InstaPay" value={phone} onChange={setPhone} placeholder="01012345678" keyboardType="number-pad" />
         <TextField label="InstaPay payment link (optional)" value={link} onChange={setLink} placeholder="https://ipn.eg/..." autoCapitalize="none" autoCorrect={false} />
+        </>}
 
         <Text style={{ color: colors.text, fontSize: 18, fontWeight: '600', marginTop: space.md }}>Totals</Text>
         {money('subtotal', 'Subtotal (as printed)')}
@@ -163,8 +174,8 @@ export default function Review() {
       </ScrollView>
 
       <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: space.lg, backgroundColor: colors.bg, borderTopColor: colors.border, borderTopWidth: 1, gap: space.sm }}>
-        <Button label={creating ? 'Creating…' : 'Looks right · create bill'} onPress={() => void create()} disabled={creating || r.items.length === 0 || rec.status === 'incomplete'} />
-        <Text style={{ color: colors.textFaint, fontSize: 12, textAlign: 'center' }}>You will get a private link to share. Your edits are saved on this phone.</Text>
+        <Button label={creating ? 'Saving…' : draft.editBillId ? 'Save changes' : 'Looks right · create bill'} onPress={() => void create()} disabled={creating || r.items.length === 0 || rec.status === 'incomplete'} />
+        <Text style={{ color: colors.textFaint, fontSize: 12, textAlign: 'center' }}>{draft.editBillId ? 'People on the link see the changes straight away.' : 'You will get a private link to share. Your edits are saved on this phone.'}</Text>
       </View>
     </SafeAreaView>
   );

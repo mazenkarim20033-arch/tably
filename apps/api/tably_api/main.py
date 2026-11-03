@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from .config import get_settings
 from .db import Base, engine
 from .routes import bills, public, webhooks
+from .routes_manage import manage
 
 
 @asynccontextmanager
@@ -45,6 +46,7 @@ def health():
     return {"ok": True}
 
 
+app.include_router(manage)  # first: its static paths must win over /{bill_id}
 app.include_router(bills)
 app.include_router(public)
 app.include_router(webhooks)

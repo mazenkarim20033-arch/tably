@@ -68,3 +68,12 @@ def join(client, token, name):
 
 def claim(client, token, headers, item_id, units):
     return client.put(f"/api/s/{token}/claims", json={"item_id": item_id, "units": units}, headers=headers)
+
+
+@pytest.fixture()
+def pbill(client):
+    """A bill whose creator has added InstaPay details, so friends can start paying."""
+    payee = {"payee_name": "Mazen", "instapay_address": "mazen@instapay"}
+    r = client.post("/api/bills", json=sample_bill(payee=payee))
+    assert r.status_code == 201, r.text
+    return r.json()

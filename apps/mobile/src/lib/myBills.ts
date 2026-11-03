@@ -67,3 +67,20 @@ export async function savePayee(p: SavedPayee): Promise<void> {
     await f.write(JSON.stringify(p));
   } catch { /* best effort */ }
 }
+
+export async function updateShareToken(id: string, shareToken: string): Promise<void> {
+  const all = (await listBills()).map((b) => (b.id === id ? { ...b, shareToken } : b));
+  const f = indexFile();
+  f.create({ overwrite: true });
+  await f.write(JSON.stringify(all));
+}
+
+export async function forgetBill(id: string): Promise<void> {
+  const all = (await listBills()).filter((b) => b.id !== id);
+  const f = indexFile();
+  f.create({ overwrite: true });
+  await f.write(JSON.stringify(all));
+  try {
+    await SecureStore.deleteItemAsync(tokenKey(id));
+  } catch { /* already gone */ }
+}

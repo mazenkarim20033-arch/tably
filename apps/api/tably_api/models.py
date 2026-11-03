@@ -81,6 +81,8 @@ class Participant(Base):
     name_key: Mapped[str] = mapped_column(String(40))  # casefolded, for uniqueness
     secret_hash: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    last_reminded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reminder_count: Mapped[int] = mapped_column(Integer, default=0)
 
     bill: Mapped[Bill] = relationship(back_populates="participants")
 

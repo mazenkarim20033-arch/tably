@@ -97,4 +97,37 @@ class PaidBody(StrictModel):
 class ReviewBody(StrictModel):
     note: Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)] = ""
 
+
+class ItemEdit(StrictModel):
+    id: str | None = Field(default=None, max_length=32)  # omit for a new item
+    description: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=160)]
+    quantity: int = Field(ge=1, le=999)
+    line_total: Money
+
+
+class BillEdit(StrictModel):
+    store: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]
+    receipt_date: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    items: list[ItemEdit] = Field(min_length=1, max_length=200)
+    discounts: int = Field(default=0, le=0, ge=-MAX_MINOR)
+    tax: Money = 0
+    service: Money = 0
+    tip: Money = 0
+    tax_included: bool = False
+    printed_total: Money | None = None
+    accept_mismatch: bool = False
+
+
+class CloseBody(StrictModel):
+    force: bool = False  # close even though not everyone has paid (for example someone never will)
+
+
+class ReminderLog(StrictModel):
+    participant_ids: list[str] = Field(min_length=1, max_length=50)
+
+
+class SummaryRequest(StrictModel):
+    bills: list[dict[str, str]] = Field(min_length=1, max_length=50)  # [{"id": ..., "admin_token": ...}]
+
+
 BillCreate.model_rebuild()

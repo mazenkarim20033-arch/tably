@@ -82,32 +82,94 @@ export interface AdminPayment {
   id: string; status: string; amount: number; reference: string; participant_id: string;
   participant_name: string; payer_note: string | null; created_at: string;
 }
+export interface AdminItem {
+  id: string; description: string; quantity: number; line_total: number; exclusive: number; remaining: number;
+  claims: { participant_id: string; units: number; shared: boolean }[];
+}
+export interface AdminPerson {
+  id: string; name: string; total: number; items_total: number; adjustment: number; pinned: boolean;
+  payment: { status: string; amount: number; reference: string } | null;
+  last_reminded_at: string | null; reminder_count: number;
+}
 export interface AdminBill {
-  id: string; store: string; currency: string; share_token: string; status: string;
+  id: string; store: string; date: string | null; currency: string; share_token: string; status: string;
+  share_disabled: boolean; share_expires_at: string | null; tax_included: boolean; printed_total: number | null;
+  receipt: { discounts: number; tax: number; service: number; tip: number };
   totals: { total: number; assigned: number; unassigned: number; collected: number; awaiting: number; outstanding: number };
-  participants: { id: string; name: string; total: number; payment: { status: string; amount: number } | null }[];
+  items: AdminItem[]; participants: AdminPerson[];
+  transfers: { id: string; payer_id: string; beneficiary_id: string; amount: number; note: string }[];
   payments: AdminPayment[];
   payee: { name: string | null } | null;
 }
 
-async function admin<T>(id: string, token: string, path = '', init: RequestInit = {}): Promise<T> {
+export class ApiProblem extends Error {
+  constructor(message: string, public code?: string, public status?: number) {
+    super(message);
+  }
+}
+
+async function admin<T>(id: string, token: string, path = "", init: RequestInit = {}): Promise<T> {
   const res = await fetch(`${API_URL}/api/bills/${id}${path}`, {
     ...init,
-    headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token, ...(init.headers ?? {}) },
+    headers: { "Content-Type": "application/json", "X-Admin-Token": token, ...(init.headers ?? {}) },
   });
   if (!res.ok) {
-    let msg = 'Request failed.';
+    let msg = "Request failed.";
+    let code: string | undefined;
     try {
       const d = (await res.json()).detail;
-      msg = typeof d === 'string' ? d : d?.message ?? msg;
+      if (typeof d === "string") msg = d;
+      else if (Array.isArray(d) && d[0]?.msg) msg = String(d[0].msg).replace(/^Value error, /, "");
+      else if (d?.message) { msg = d.message; code = d.code; }
     } catch { /* keep default */ }
-    throw new Error(msg);
+    throw new ApiProblem(msg, code, res.status);
   }
   return res.json() as Promise<T>;
 }
 
-export const getAdminBill = (id: string, token: string) => admin<AdminBill>(id, token);
-export const confirmPayment = (id: string, token: string, paymentId: string) =>
-  admin<AdminBill>(id, token, `/payments/${paymentId}/confirm`, { method: 'POST', body: JSON.stringify({ note: 'Confirmed in TABLY app' }) });
-export const rejectPayment = (id: string, token: string, paymentId: string) =>
-  admin<AdminBill>(id, token, `/payments/${paymentId}/reject`, { method: 'POST', body: JSON.stringify({ note: 'Not received' }) });
+const post = (body: unknown = {}) => ({ method: "POST", body: JSON.stringify(body) });
+export type ClaimChange = { units: number } | { share: boolean };
+
+export const getAdminBill = (id: string, t: string) => admin<AdminBill>(id, t);
+export const confirmPayment = (id: string, t: string, paymentId: string) =>
+  admin<AdminBill>(id, t, `/payments/${paymentId}/confirm`, post({ note: "Confirmed in TABLY app" }));
+export const rejectPayment = (id: string, t: string, paymentId: string) =>
+  admin<AdminBill>(id, t, `/payments/${paymentId}/reject`, post({ note: "Not received" }));
+export const closeBill = (id: string, t: string, force = false) => admin<AdminBill>(id, t, "/close", post({ force }));
+export const reopenBill = (id: string, t: string) => admin<AdminBill>(id, t, "/reopen", post());
+export const addPerson = (id: string, t: string, name: string) => admin<AdminBill>(id, t, "/participants", post({ name }));
+export const removePerson = (id: string, t: string, pid: string) => admin<AdminBill>(id, t, `/participants/${pid}`, { method: "DELETE" });
+export const assignFor = (id: string, t: string, pid: string, itemId: string, change: ClaimChange) =>
+  admin<AdminBill>(id, t, `/participants/${pid}/claims`, { method: "PUT", body: JSON.stringify({ item_id: itemId, ...change }) });
+export const logReminders = (id: string, t: string, ids: string[]) => admin<AdminBill>(id, t, "/reminders", post({ participant_ids: ids }));
+export const addTransfer = (id: string, t: string, payer: string, beneficiary: string, amount: number, note = "") =>
+  admin<AdminBill>(id, t, "/transfers", post({ payer_id: payer, beneficiary_id: beneficiary, amount, note }));
+export const removeTransfer = (id: string, t: string, transferId: string) => admin<AdminBill>(id, t, `/transfers/${transferId}`, { method: "DELETE" });
+export const updateLink = (id: string, t: string, change: { disabled?: boolean; rotate?: boolean; extend_days?: number }) =>
+  admin<{ share_token: string; share_disabled: boolean; share_expires_at: string }>(id, t, "/link", post(change));
+
+export const editReceipt = (id: string, t: string, r: Receipt, acceptMismatch = false) =>
+  admin<AdminBill>(id, t, "/receipt", { method: "PATCH", body: JSON.stringify(toEditPayload(r, acceptMismatch)) });
+
+/** Same shape as creating, but items keep their server id so claims survive the edit. */
+export function toEditPayload(r: Receipt, acceptMismatch: boolean) {
+  const { payee: _ignored, items, ...rest } = toPayload(r, acceptMismatch);
+  void _ignored;
+  return {
+    ...rest,
+    items: items.map((it, n) => ({ ...it, ...(/^[a-f0-9]{32}$/.test(r.items[n]!.id) ? { id: r.items[n]!.id } : {}) })),
+  };
+}
+
+export interface BillSummary {
+  id: string; missing?: boolean; store?: string; date?: string | null; currency?: string; status?: string;
+  total?: number; collected?: number; outstanding?: number; people?: number; waiting?: number; link_disabled?: boolean;
+}
+export async function fetchSummaries(refs: { id: string; admin_token: string }[]): Promise<BillSummary[]> {
+  if (refs.length === 0) return [];
+  const res = await fetch(`${API_URL}/api/bills/summaries`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bills: refs.slice(0, 50) }),
+  });
+  if (!res.ok) throw new Error("Could not load your bills.");
+  return (await res.json()).bills;
+}
