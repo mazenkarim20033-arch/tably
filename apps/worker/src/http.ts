@@ -45,8 +45,12 @@ export async function rateLimit(c: C, bucket: string, limit: number, seconds: nu
 export async function parse<T>(c: C, schema: ZodType<T>): Promise<T> {
   let raw: unknown;
   try {
-    raw = await c.req.json();
-  } catch {
+    // A body without Content-Length (chunked) is not caught by the header check, so measure what actually arrived.
+    const text = await c.req.text();
+    if (text.length > 256 * 1024) throw new HttpError(413, 'Request body too large.');
+    raw = JSON.parse(text);
+  } catch (e) {
+    if (e instanceof HttpError) throw e;
     throw new HttpError(422, [{ msg: 'Invalid JSON.' }]);
   }
   const r = schema.safeParse(raw);
