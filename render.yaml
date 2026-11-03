@@ -1,0 +1,12 @@
+# Render blueprint (optional). Any host that runs a Docker image works the same way; see docs/deploy.md.
+services:
+  - type: web
+    name: tably
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: TABLY_DATABASE_URL
+        sync: false # paste your Postgres connection string in the dashboard; never commit it
+      - key: TABLY_PAYMENT_LINK_HOSTS
+        value: ipn.eg

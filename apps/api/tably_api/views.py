@@ -71,7 +71,7 @@ def admin_view(bill: Bill, db: Session) -> dict:
         "tax_included": bill.tax_included,
         # Raw receipt figures, so an edit screen can show them even when tax is included in prices.
         "receipt": {"discounts": bill.discounts, "tax": bill.tax, "service": bill.service, "tip": bill.tip},
-        "has_image": bool(bill.image_path),
+        "has_image": bill.image is not None,
         "created_at": bill.created_at,
         "payments": [
             {

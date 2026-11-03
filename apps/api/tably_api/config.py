@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -8,8 +9,19 @@ class Settings(BaseSettings):
 
     # Dev default is SQLite. Production: postgresql+psycopg://user:pass@host/db
     database_url: str = "sqlite:///./tably.db"
-    upload_dir: str = "uploads"
-    max_upload_bytes: int = 10 * 1024 * 1024
+
+    @field_validator("database_url")
+    @classmethod
+    def _driver(cls, v: str) -> str:
+        """Hosts hand out postgres:// or postgresql:// URLs; SQLAlchemy needs the psycopg 3 driver named."""
+        for prefix in ("postgres://", "postgresql://"):
+            if v.startswith(prefix):
+                return "postgresql+psycopg://" + v[len(prefix):]
+        return v
+
+    max_upload_bytes: int = 8 * 1024 * 1024
+    max_json_bytes: int = 256 * 1024
+    retention_days: int = 180  # bills older than this are deleted by `python -m tably_api.purge`
     share_link_days: int = 30
     # Only enable behind a reverse proxy you control; otherwise clients can spoof X-Forwarded-For.
     trust_proxy: bool = False

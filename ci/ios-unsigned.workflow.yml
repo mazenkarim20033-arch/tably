@@ -8,11 +8,16 @@ on:
 jobs:
   build:
     runs-on: macos-15
+    env:
+      # The backend the app talks to. Set it in GitHub: Settings > Secrets and variables > Actions > Variables > API_URL
+      EXPO_PUBLIC_API_URL: ${{ vars.API_URL }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Require the backend URL
+        run: test -n "$EXPO_PUBLIC_API_URL" || (echo "Set the API_URL repository variable first" && exit 1)
       - run: npm ci
       - name: Generate native iOS project
         working-directory: apps/mobile

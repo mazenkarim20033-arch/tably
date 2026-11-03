@@ -4,10 +4,11 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import (
+    LargeBinary,
     Index, text,
     BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Integer, String, UniqueConstraint,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, deferred, mapped_column, relationship
 
 from .db import Base
 
@@ -47,7 +48,6 @@ class Bill(Base):
     share_disabled: Mapped[bool] = mapped_column(Boolean, default=False)
     share_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     admin_token_hash: Mapped[str] = mapped_column(String(64))
-    image_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     items: Mapped[list[Item]] = relationship(back_populates="bill", order_by="Item.position", cascade="all, delete-orphan")
@@ -55,6 +55,7 @@ class Bill(Base):
         back_populates="bill", order_by="Participant.created_at", cascade="all, delete-orphan"
     )
     transfers: Mapped[list["Transfer"]] = relationship(order_by="Transfer.created_at", cascade="all, delete-orphan")
+    image: Mapped["ReceiptImage | None"] = relationship(uselist=False, cascade="all, delete-orphan")
 
 
 class Item(Base):
@@ -177,3 +178,14 @@ class PaymentEvent(Base):
     to_status: Mapped[str] = mapped_column(String(24))
     note: Mapped[str] = mapped_column(String(200), default="")
     provider_event_id: Mapped[str | None] = mapped_column(String(100), nullable=True, unique=True)
+
+
+class ReceiptImage(Base):
+    """The original receipt photo, kept in the database so it survives redeploys on hosts with ephemeral disks."""
+
+    __tablename__ = "receipt_images"
+
+    bill_id: Mapped[str] = mapped_column(ForeignKey("bills.id", ondelete="CASCADE"), primary_key=True)
+    content_type: Mapped[str] = mapped_column(String(20))
+    data: Mapped[bytes] = deferred(mapped_column(LargeBinary))  # not loaded unless asked for
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

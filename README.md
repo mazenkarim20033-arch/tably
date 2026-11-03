@@ -34,8 +34,10 @@ Core tests and typechecks: `npm test` and `npm run typecheck`.
 | Variable | Where | Meaning |
 |---|---|---|
 | `TABLY_DATABASE_URL` | api | `sqlite:///./tably.db` (default) or `postgresql+psycopg://...` |
-| `TABLY_TRUST_PROXY` | api | `true` only behind your own reverse proxy |
+| `TABLY_TRUST_PROXY` | api | `true` only behind your own reverse proxy (the Docker image uses uvicorn proxy headers instead) |
 | `TABLY_WEB_DIST` | api | built web app to serve (default `../web/dist`) |
 | `EXPO_PUBLIC_API_URL` | mobile build | Backend URL. A phone cannot use `localhost`. |
 
-Set `TABLY_TEST_DATABASE_URL` to a Postgres URL to run the API tests against Postgres.
+Set `TABLY_TEST_DATABASE_URL` to a throwaway Postgres URL (database name must contain "test") to run the API tests against Postgres.
+
+Deploying and getting the app onto your iPhone with Sideloadly: [docs/deploy.md](docs/deploy.md). Security notes: [docs/security.md](docs/security.md). What is real in payments: [docs/payments.md](docs/payments.md).

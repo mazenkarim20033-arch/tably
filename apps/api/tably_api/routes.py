@@ -1,11 +1,10 @@
 import asyncio
 import time
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -14,7 +13,7 @@ from . import service
 from .config import get_settings
 from .db import SessionLocal, get_db
 from . import payments, views
-from .models import Bill, Item, Participant, Payment, Transfer
+from .models import Bill, Item, Participant, Payment, ReceiptImage, Transfer
 from .money import extras_total
 from .providers import PROVIDERS, NotImplementedProvider, WebhookRejected
 from .ratelimit import limit
@@ -177,14 +176,14 @@ async def upload_image(bill_id: str, file: UploadFile, x_admin_token: str | None
     data = await file.read(cfg.max_upload_bytes + 1)
     if len(data) > cfg.max_upload_bytes:
         raise HTTPException(413, "Image is too large.")
-    ext = next((e for magic, e in IMAGE_TYPES.items() if data.startswith(magic)), None)
-    if ext is None:
+    kind = next((t for magic, t in IMAGE_TYPES.items() if data.startswith(magic)), None)
+    if kind is None:
         raise HTTPException(415, "Only JPEG and PNG images are accepted.")
-    folder = Path(cfg.upload_dir)
-    folder.mkdir(parents=True, exist_ok=True)
-    name = f"{bill.id}.{ext}"  # server-generated; the client filename is never used
-    (folder / name).write_bytes(data)
-    bill.image_path = name
+    content_type = "image/jpeg" if kind == "jpg" else "image/png"  # decided here, never taken from the client
+    if bill.image is None:
+        bill.image = ReceiptImage(content_type=content_type, data=data)
+    else:
+        bill.image.content_type, bill.image.data = content_type, data
     db.commit()
     return Response(status_code=204)
 
@@ -192,9 +191,10 @@ async def upload_image(bill_id: str, file: UploadFile, x_admin_token: str | None
 @bills.get("/{bill_id}/image")
 def get_image(bill_id: str, x_admin_token: str | None = Header(default=None), db: Session = Depends(get_db)):
     bill = _admin_bill(db, bill_id, x_admin_token)
-    if not bill.image_path:
+    if bill.image is None:
         raise HTTPException(404, "No image.")
-    return FileResponse(Path(get_settings().upload_dir) / bill.image_path)
+    return Response(content=bill.image.data, media_type=bill.image.content_type,
+                    headers={"Content-Disposition": "inline", "Cache-Control": "private, no-store"})
 
 
 @bills.post("/{bill_id}/transfers", status_code=201, dependencies=[Depends(limit("transfer", 60, 3600))])

@@ -1,44 +1,39 @@
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .config import get_settings
 from .db import Base, engine
+from .hardening import BodyLimitMiddleware, install_log_redaction, security_middleware
 from .routes import bills, public, webhooks
 from .routes_manage import manage
+
+install_log_redaction()
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    # Fine for the MVP; switch to Alembic migrations before the schema changes in production.
-    Base.metadata.create_all(engine)
+    # SQLite dev databases are created on the fly. Real databases are managed by `alembic upgrade head`.
+    if engine.dialect.name == "sqlite" or os.environ.get("TABLY_AUTO_CREATE") == "1":
+        Base.metadata.create_all(engine)
     yield
 
 
-app = FastAPI(title="TABLY API", lifespan=lifespan, docs_url=None, redoc_url=None)
+app = FastAPI(title="TABLY API", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 
 _origins = [o.strip() for o in get_settings().cors_origins.split(",") if o.strip()]
 if _origins:
     app.add_middleware(
-        CORSMiddleware, allow_origins=_origins, allow_methods=["GET", "POST", "PUT"],
-        allow_headers=["Content-Type", "X-Admin-Token", "X-Participant-Token", "X-Participant-Id"],
+        CORSMiddleware, allow_origins=_origins, allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+        allow_headers=["Content-Type", "X-Admin-Token", "X-Participant-Token", "X-Participant-Id", "Idempotency-Key"],
     )
-
-
-@app.middleware("http")
-async def security_headers(request: Request, call_next):
-    response = await call_next(request)
-    # Share tokens live in URLs, so never leak them through Referer; never cache bill data.
-    response.headers["Referrer-Policy"] = "no-referrer"
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Frame-Options"] = "DENY"
-    if request.url.path.startswith("/api/"):
-        response.headers["Cache-Control"] = "no-store"
-    return response
+app.middleware("http")(security_middleware)
+app.add_middleware(BodyLimitMiddleware)
 
 
 @app.get("/api/health")
@@ -51,15 +46,20 @@ app.include_router(bills)
 app.include_router(public)
 app.include_router(webhooks)
 
-_dist = Path(get_settings().web_dist)
-if _dist.is_dir():
-    app.mount("/assets", StaticFiles(directory=_dist / "assets"), name="assets")
+def mount_web(target_app: FastAPI, dist: Path) -> None:
+    """Serve the built shared-bill page (and its client-side routes) from the same server as the API."""
+    root = dist.resolve()
+    target_app.mount("/assets", StaticFiles(directory=root / "assets"), name="assets")
 
-    @app.get("/{path:path}", include_in_schema=False)
+    @target_app.get("/{path:path}", include_in_schema=False)
     def spa(path: str):
         if path.startswith("api/"):
             return JSONResponse({"detail": "Not found."}, status_code=404)
-        target = (_dist / path).resolve()
-        if path and target.is_file() and _dist.resolve() in target.parents:
+        target = (root / path).resolve()
+        if path and target.is_file() and root in target.parents:  # never serve outside the build folder
             return FileResponse(target)
-        return FileResponse(_dist / "index.html")
+        return FileResponse(root / "index.html")
+
+
+if Path(get_settings().web_dist).is_dir():
+    mount_web(app, Path(get_settings().web_dist))
