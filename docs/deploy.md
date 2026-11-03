@@ -1,8 +1,12 @@
 # Deploying TABLY and getting it on your iPhone
 
-> **No credit card? Run the server on your own PC.** Use `scripts/start-server.ps1` (needs `winget install Cloudflare.cloudflared`).
-> It uses your Neon database and prints a free public address that you paste into the app under Home > Server settings.
-> The address changes on every start and the PC must stay on. Sections 2 and 3 below describe hosting on a cloud host instead.
+> **No credit card? Run the server on your own PC with a permanent free address (Tailscale Funnel).**
+> One-time setup: `winget install Tailscale.Tailscale`, sign in at the link it prints, then enable Funnel at the link
+> `tailscale funnel --bg 8000` prints. After that your address (`https://<pc>.<tailnet>.ts.net`) never changes. Set it as the
+> GitHub repository variable `API_URL` (it is built into the iPhone app) and start the server with
+> `powershell -ExecutionPolicy Bypass -File scriptsstart-server.ps1`.
+> The PC must stay on and awake. Free Personal plan: non-commercial use, unpublished bandwidth limits.
+> Sections 2 and 3 below describe hosting on a cloud host instead.
 
 Two things must exist before the iPhone app works for real:
 
@@ -57,8 +61,8 @@ The workflow `.github/workflows/ios-unsigned.yml` builds an unsigned IPA on a Gi
 `scripts/ci-ios-build.sh`). JavaScript packages, CocoaPods and compiled iOS code are cached, so repeat builds are much faster than the first.
 
 1. **Actions** tab > "Build unsigned iOS IPA" > **Run workflow**. When the check is green, download the `TABLY-unsigned-ipa` artifact and unzip it.
-2. Optional: set a repository variable `API_URL` (Settings > Secrets and variables > Actions > Variables) as a fallback server address.
-   The app normally takes the address from Home > Server settings.
+2. Set the repository variable `API_URL` (Settings > Secrets and variables > Actions > Variables) to your permanent server address.
+   It is built into the app; there is no server setting inside the app.
 
 `.github/workflows/tests.yml` runs all tests on every push.
 

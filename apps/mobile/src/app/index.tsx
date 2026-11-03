@@ -5,7 +5,6 @@ import { brand, type as t } from '@tably/core';
 import { Logo } from '../components/Logo';
 import { Button } from '../components/Button';
 import { useTheme } from '../theme/ThemeProvider';
-import { hasServer } from '../lib/config';
 
 export default function Home() {
   const { colors, space } = useTheme();
@@ -18,9 +17,7 @@ export default function Home() {
       </View>
       <View style={{ gap: space.sm }}>
         <Button label="Scan a receipt" onPress={() => router.push('/scan')} />
-        {!hasServer() && <Text style={{ color: colors.warning, fontSize: 14 }}>No server address yet. Open Server settings first.</Text>}
         <Button label="Previous bills" variant="quiet" onPress={() => router.push('/bills')} />
-        <Button label="Server settings" variant="quiet" onPress={() => router.push('/settings')} />
       </View>
     </SafeAreaView>
   );

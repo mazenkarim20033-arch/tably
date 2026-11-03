@@ -1,15 +1,17 @@
-# Starts the TABLY server on this PC and opens a free public address for it.
+# Starts the TABLY server on this PC and makes it reachable at your permanent public address.
 #
-#   powershell -ExecutionPolicy Bypass -File scripts\start-server.ps1                (database on this PC: fast, the default)
-#   powershell -ExecutionPolicy Bypass -File scripts\start-server.ps1 -Database neon (cloud database, needs .env.local)
+#   powershell -ExecutionPolicy Bypass -File scripts\start-server.ps1
 #
-# Why local is the default: the server runs on this PC, and a cloud database on another continent adds ~0.2 s to every
-# query (a tap on an item makes ~16 of them), which feels like several seconds of lag. The local database is the file
-# data\tably.db. Back it up if you care about old bills.
+# Your address never changes (Tailscale Funnel): https://<this-pc>.<tailnet>.ts.net
+# Keep this window open while people use the app. Close it (or press Ctrl+C) to stop the server.
+# The PC must stay on and awake for links to work.
 #
-# Keep the window open while people use the app. Close it (or press Ctrl+C) to stop everything.
-# The public address (https://something.trycloudflare.com) changes every time you start this;
-# paste the new one into the app: Home > Server settings.
+# Options:
+#   -Database neon    use the cloud database from .env.local instead of the file on this PC (slower from far away)
+#
+# Why the database is local by default: a cloud database on another continent adds ~0.2 s to every query
+# (a tap makes ~16), which feels like seconds of lag. The local database is the file data\tably.db.
+# Back it up if you care about old bills.
 
 param([ValidateSet('local', 'neon')][string]$Database = 'local')
 
@@ -18,10 +20,11 @@ $root = Split-Path -Parent $PSScriptRoot
 $api = Join-Path $root 'apps\api'
 $python = Join-Path $api '.venv\Scripts\python.exe'
 $dist = Join-Path $root 'apps\web\dist'
+$tailscale = 'C:\Program Files\Tailscale\tailscale.exe'
 
 if (-not (Test-Path $python)) { throw "Python environment not found at $python. See README.md." }
-if (-not (Get-Command cloudflared -ErrorAction SilentlyContinue)) {
-    throw "cloudflared is not installed. Install it with: winget install Cloudflare.cloudflared (then open a new window)."
+if (-not (Test-Path $tailscale)) {
+    throw "Tailscale is not installed. Install it with: winget install Tailscale.Tailscale, sign in, then enable Funnel (see docs/deploy.md)."
 }
 
 if ($Database -eq 'neon') {
@@ -73,12 +76,16 @@ try {
         try { $up = (Invoke-RestMethod 'http://127.0.0.1:8000/api/health' -TimeoutSec 2).ok } catch { }
     }
     if (-not $up) { throw 'The server did not start. Check the messages above.' }
+
+    # Funnel forwards your permanent public address to this server. The setting is remembered by Tailscale.
+    & $tailscale funnel --bg 8000 | Out-Host
+    $status = (& $tailscale funnel status | Out-String)
+    $address = [regex]::Match($status, 'https://\S+\.ts\.net').Value
     Write-Host ''
-    Write-Host 'Server is running. Look below for the line containing https://....trycloudflare.com'
-    Write-Host 'That is your public address. Paste it into the app: Home > Server settings.'
+    Write-Host "TABLY is running. Your permanent address: $address"
+    Write-Host 'Share bill links from the app as usual. Keep this window open. Press Ctrl+C to stop.'
     Write-Host ''
-    # http2 (TCP) instead of the default QUIC (UDP): many home and public networks block UDP and the tunnel never connects.
-    cloudflared tunnel --protocol http2 --url http://127.0.0.1:8000
+    Wait-Process -Id $server.Id
 }
 finally {
     if ($server -and -not $server.HasExited) { Stop-Process -Id $server.Id -Force }
