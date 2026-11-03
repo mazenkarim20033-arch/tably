@@ -1,5 +1,9 @@
 # Deploying TABLY and getting it on your iPhone
 
+> **No credit card? Run the server on your own PC.** Use `scripts/start-server.ps1` (needs `winget install Cloudflare.cloudflared`).
+> It uses your Neon database and prints a free public address that you paste into the app under Home > Server settings.
+> The address changes on every start and the PC must stay on. Sections 2 and 3 below describe hosting on a cloud host instead.
+
 Two things must exist before the iPhone app works for real:
 
 1. **A hosted backend** (the phone cannot reach a server running on your PC).

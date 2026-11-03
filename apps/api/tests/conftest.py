@@ -21,10 +21,25 @@ from tably_api.db import Base, engine  # noqa: E402
 from tably_api.main import app  # noqa: E402
 
 
+_schema_ready = False
+
+
 @pytest.fixture(autouse=True)
 def fresh_db():
-    Base.metadata.drop_all(engine)
-    Base.metadata.create_all(engine)
+    global _schema_ready
+    if engine.dialect.name == "postgresql":
+        # Over a network, rebuilding every table per test takes ~12 s. Build once, then empty the tables.
+        if not _schema_ready:
+            Base.metadata.drop_all(engine)
+            Base.metadata.create_all(engine)
+            _schema_ready = True
+        else:
+            names = ", ".join(f'"{t.name}"' for t in Base.metadata.sorted_tables)
+            with engine.begin() as conn:
+                conn.exec_driver_sql(f"TRUNCATE {names} RESTART IDENTITY CASCADE")
+    else:
+        Base.metadata.drop_all(engine)
+        Base.metadata.create_all(engine)
     ratelimit.reset()
     yield
 

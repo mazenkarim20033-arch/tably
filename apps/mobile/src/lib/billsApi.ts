@@ -1,6 +1,6 @@
 import { File } from 'expo-file-system';
 import type { Receipt } from '@tably/core';
-import { API_URL } from './config';
+import { requireServer } from './config';
 
 export interface CreatedBill {
   id: string;
@@ -41,7 +41,7 @@ export function toPayload(r: Receipt, acceptMismatch: boolean, payee?: Payee) {
 }
 
 export async function createBill(r: Receipt, acceptMismatch = false, payee?: Payee): Promise<CreatedBill> {
-  const res = await fetch(`${API_URL}/api/bills`, {
+  const res = await fetch(`${requireServer()}/api/bills`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(toPayload(r, acceptMismatch, payee)),
@@ -67,7 +67,7 @@ export async function uploadImage(billId: string, adminToken: string, uri: strin
     const file = new File(uri);
     const form = new FormData();
     form.append('file', { uri: file.uri, name: 'receipt.jpg', type: 'image/jpeg' } as unknown as Blob);
-    const res = await fetch(`${API_URL}/api/bills/${billId}/image`, {
+    const res = await fetch(`${requireServer()}/api/bills/${billId}/image`, {
       method: 'POST',
       headers: { 'X-Admin-Token': adminToken },
       body: form,
@@ -109,7 +109,7 @@ export class ApiProblem extends Error {
 }
 
 async function admin<T>(id: string, token: string, path = "", init: RequestInit = {}): Promise<T> {
-  const res = await fetch(`${API_URL}/api/bills/${id}${path}`, {
+  const res = await fetch(`${requireServer()}/api/bills/${id}${path}`, {
     ...init,
     headers: { "Content-Type": "application/json", "X-Admin-Token": token, ...(init.headers ?? {}) },
   });
@@ -167,7 +167,7 @@ export interface BillSummary {
 }
 export async function fetchSummaries(refs: { id: string; admin_token: string }[]): Promise<BillSummary[]> {
   if (refs.length === 0) return [];
-  const res = await fetch(`${API_URL}/api/bills/summaries`, {
+  const res = await fetch(`${requireServer()}/api/bills/summaries`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bills: refs.slice(0, 50) }),
   });
   if (!res.ok) throw new Error("Could not load your bills.");

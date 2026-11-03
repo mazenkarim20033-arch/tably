@@ -17,9 +17,9 @@ def call(base, method, path, body=None, headers=None):
     )
     try:
         with urllib.request.urlopen(req, timeout=60) as r:
-            return r.status, dict(r.headers), json.loads(r.read() or b"null")
+            return r.status, {k.lower(): v for k, v in r.headers.items()}, json.loads(r.read() or b"null")
     except urllib.error.HTTPError as e:
-        return e.code, dict(e.headers), json.loads(e.read() or b"null") if e.headers.get_content_type() == "application/json" else None
+        return e.code, {k.lower(): v for k, v in e.headers.items()}, json.loads(e.read() or b"null") if e.headers.get_content_type() == "application/json" else None
 
 
 def check(ok, label):

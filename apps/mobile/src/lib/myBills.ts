@@ -1,6 +1,6 @@
 import * as SecureStore from 'expo-secure-store';
 import { Directory, File, Paths } from 'expo-file-system';
-import { WEB_URL } from './config';
+import { webUrl } from './config';
 
 /** Bills this phone created. Admin tokens live in the keychain; only display data is in the JSON index. */
 export interface MyBill {
@@ -40,7 +40,7 @@ export async function saveBill(bill: MyBill, adminToken: string): Promise<void> 
 
 export const getAdminToken = (id: string) => SecureStore.getItemAsync(tokenKey(id));
 
-export const shareUrl = (token: string) => `${WEB_URL}/s/${token}`;
+export const shareUrl = (token: string) => `${webUrl()}/s/${token}`;
 
 /** The last payment details used, so the next bill is one tap faster. Not secret, but personal: stays on the phone. */
 export interface SavedPayee { payee_name: string; instapay_address?: string; instapay_phone?: string; instapay_link?: string }
