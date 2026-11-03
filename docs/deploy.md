@@ -7,24 +7,36 @@ Two things must exist before the iPhone app works for real:
 
 Everything here is free or nearly free. None of it has been run on real hosting yet: the Dockerfile has not been built, and the backend has only been exercised on SQLite plus a local rehearsal (see "What is untested").
 
-## 1. Database (free)
+## 1. Database (Neon, already linked)
 
-Create a free Postgres database at https://neon.tech (any Postgres works). Copy its connection string.
-It looks like `postgresql://user:pass@host/dbname`; TABLY rewrites the scheme itself.
+This repo is linked to a Neon project (`neon.ts`, `.neon` is git-ignored). Neon gives two connection strings;
+`neon env pull` writes both to `.env.local` (git-ignored, never commit it):
+
+| Variable | Use it for |
+|---|---|
+| `DATABASE_URL` (pooled, host has `-pooler`) | the running app. The server reads it directly (or `TABLY_DATABASE_URL`) |
+| `DATABASE_URL_UNPOOLED` (direct) | schema migrations (`alembic upgrade head`). The migration tool prefers it automatically |
+
+Why two: the pooled endpoint is PgBouncer in transaction mode, which breaks session-level work such as migrations.
+The app disables server-side prepared statements so it works on the pooled endpoint.
+
+Branches: `production` is the real data. `neon checkout <name> --create` makes a throwaway copy (expires after 7 days per `neon.ts`).
+Never run the test suite against `production`: it drops every table. It refuses any database whose name lacks "test".
 
 ## 2. Backend (free tier)
 
 TABLY ships as one Docker image that serves the API and the shared bill page. `render.yaml` describes it for Render;
 any Docker host (Fly.io, Koyeb, Railway, a VPS) works the same way.
 
-On Render: New > Blueprint > pick this repo > set `TABLY_DATABASE_URL` to your connection string.
+On Render: New > Blueprint > pick this repo > set `DATABASE_URL` (pooled) and `DATABASE_URL_UNPOOLED` (direct) from `.env.local`.
 The container runs `alembic upgrade head` on start, so tables are created automatically.
 
 Settings (environment variables, all prefixed `TABLY_`):
 
 | Variable | Meaning |
 |---|---|
-| `DATABASE_URL` | Postgres connection string (required) |
+| `DATABASE_URL` | Postgres connection string: the pooled Neon one (required). `TABLY_DATABASE_URL` also works |
+| `DATABASE_URL_UNPOOLED` | direct Neon string used only for migrations at start-up (recommended) |
 | `PAYMENT_LINK_HOSTS` | allowed hosts for a creator's InstaPay link (default `ipn.eg`, **unverified**) |
 | `SHARE_LINK_DAYS` | default link lifetime, 30 |
 | `RETENTION_DAYS` | `python -m tably_api.purge` deletes bills older than this, 180 |

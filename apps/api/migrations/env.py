@@ -11,8 +11,10 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name, disable_existing_loggers=False)
 
-# The database URL comes from TABLY_DATABASE_URL, never from alembic.ini, so secrets stay out of the repo.
-config.set_main_option("sqlalchemy.url", get_settings().database_url.replace("%", "%%"))
+# The URL comes from the environment, never from alembic.ini, so secrets stay out of the repo.
+# Migrations use the direct (unpooled) connection when one is provided.
+_cfg = get_settings()
+config.set_main_option("sqlalchemy.url", (_cfg.migration_database_url or _cfg.database_url).replace("%", "%%"))
 target_metadata = Base.metadata
 
 

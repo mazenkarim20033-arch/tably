@@ -2,7 +2,10 @@
   "name": "tably",
   "private": true,
   "version": "0.1.0",
-  "workspaces": ["packages/*", "apps/*"],
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
   "scripts": {
     "test": "npm test -w @tably/core",
     "typecheck": "npm run typecheck -w @tably/core && npm run typecheck -w @tably/web && npm run typecheck -w @tably/mobile",
@@ -10,5 +13,9 @@
   },
   "devDependencies": {
     "sharp": "^0.34.0"
+  },
+  "dependencies": {
+    "@neon/config": "^1.10.0",
+    "@neon/env": "^1.6.8"
   }
 }

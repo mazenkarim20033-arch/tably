@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import field_validator
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -8,14 +8,17 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="TABLY_", env_file=".env", extra="ignore")
 
     # Dev default is SQLite. Production: postgresql+psycopg://user:pass@host/db
-    database_url: str = "sqlite:///./tably.db"
+    # TABLY_DATABASE_URL wins; DATABASE_URL is the name Neon (and most hosts) provide. Use the POOLED string here.
+    database_url: str = Field(default="sqlite:///./tably.db", validation_alias=AliasChoices("TABLY_DATABASE_URL", "DATABASE_URL"))
+    # Direct (unpooled) string for schema migrations: PgBouncer transaction pooling breaks session-level DDL.
+    migration_database_url: str | None = Field(default=None, validation_alias=AliasChoices("TABLY_MIGRATION_DATABASE_URL", "DATABASE_URL_UNPOOLED"))
 
-    @field_validator("database_url")
+    @field_validator("database_url", "migration_database_url")
     @classmethod
-    def _driver(cls, v: str) -> str:
+    def _driver(cls, v: str | None) -> str | None:
         """Hosts hand out postgres:// or postgresql:// URLs; SQLAlchemy needs the psycopg 3 driver named."""
         for prefix in ("postgres://", "postgresql://"):
-            if v.startswith(prefix):
+            if v and v.startswith(prefix):
                 return "postgresql+psycopg://" + v[len(prefix):]
         return v
 

@@ -26,7 +26,15 @@ def make_engine(url: str) -> Engine:
             conn.exec_driver_sql("BEGIN IMMEDIATE")
 
         return engine
-    return create_engine(url, pool_pre_ping=True)
+    return create_engine(
+        url,
+        pool_pre_ping=True,  # Neon scales idle compute to zero; drop dead connections instead of failing a request
+        pool_size=5,
+        max_overflow=5,
+        pool_recycle=300,
+        # The pooled Neon endpoint is PgBouncer in transaction mode: no server-side prepared statements.
+        connect_args={"prepare_threshold": None},
+    )
 
 
 engine = make_engine(get_settings().database_url)
