@@ -1,4 +1,3 @@
-import { File } from 'expo-file-system';
 import type { Receipt } from '@tably/core';
 import { requireServer } from './config';
 
@@ -59,23 +58,6 @@ export async function createBill(r: Receipt, acceptMismatch = false, payee?: Pay
   }
   if (Array.isArray(detail) && detail[0]?.msg) throw new Error(String(detail[0].msg).replace(/^Value error, /, ''));
   throw new Error(typeof detail === 'string' ? detail : 'Could not create the bill. Check your connection and try again.');
-}
-
-/** Best effort: the bill works without the image, so a failed upload must not block sharing. */
-export async function uploadImage(billId: string, adminToken: string, uri: string): Promise<boolean> {
-  try {
-    const file = new File(uri);
-    const form = new FormData();
-    form.append('file', { uri: file.uri, name: 'receipt.jpg', type: 'image/jpeg' } as unknown as Blob);
-    const res = await fetch(`${requireServer()}/api/bills/${billId}/image`, {
-      method: 'POST',
-      headers: { 'X-Admin-Token': adminToken },
-      body: form,
-    });
-    return res.ok;
-  } catch {
-    return false;
-  }
 }
 
 export interface AdminPayment {

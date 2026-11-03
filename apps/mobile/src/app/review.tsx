@@ -10,7 +10,7 @@ import { Button } from '../components/Button';
 import { AmountField, TextField } from '../components/Fields';
 import { useTheme } from '../theme/ThemeProvider';
 import { updateDraft, useDraft } from '../lib/draftStore';
-import { ApiProblem, createBill, editReceipt, MismatchError, uploadImage } from '../lib/billsApi';
+import { ApiProblem, createBill, editReceipt, MismatchError } from '../lib/billsApi';
 import { getAdminToken, loadPayee, savePayee, saveBill } from '../lib/myBills';
 
 export default function Review() {
@@ -54,7 +54,6 @@ export default function Review() {
       }
       const made = await createBill(draft.receipt, acceptMismatch, hasPayee ? payee : undefined);
       if (hasPayee) void savePayee(payee);
-      if (draft.imageUri) void uploadImage(made.id, made.admin_token, draft.imageUri);
       const rec = reconcile(draft.receipt);
       await saveBill(
         { id: made.id, store: draft.receipt.merchant?.trim() || 'Receipt', currency: draft.receipt.currency,
