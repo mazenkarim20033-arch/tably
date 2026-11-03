@@ -16,7 +16,9 @@ export class MismatchError extends Error {
 }
 
 /** Map the edited receipt to the API payload. Throws a readable error if something required is missing. */
-export function toPayload(r: Receipt, acceptMismatch: boolean) {
+export interface Payee { payee_name: string; instapay_address?: string; instapay_phone?: string; instapay_link?: string }
+
+export function toPayload(r: Receipt, acceptMismatch: boolean, payee?: Payee) {
   const items = r.items.map((i) => {
     if (i.lineTotal === null) throw new Error(`"${i.description || 'An item'}" has no price.`);
     if (i.description.trim() === '') throw new Error('Every item needs a name.');
@@ -34,14 +36,15 @@ export function toPayload(r: Receipt, acceptMismatch: boolean) {
     tax_included: r.taxIncluded,
     printed_total: r.total,
     accept_mismatch: acceptMismatch,
+    ...(payee ? { payee } : {}),
   };
 }
 
-export async function createBill(r: Receipt, acceptMismatch = false): Promise<CreatedBill> {
+export async function createBill(r: Receipt, acceptMismatch = false, payee?: Payee): Promise<CreatedBill> {
   const res = await fetch(`${API_URL}/api/bills`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(toPayload(r, acceptMismatch)),
+    body: JSON.stringify(toPayload(r, acceptMismatch, payee)),
   });
   if (res.ok) return res.json();
   let detail: unknown;
@@ -54,6 +57,7 @@ export async function createBill(r: Receipt, acceptMismatch = false): Promise<Cr
     const d = detail as { computed_total: number; printed_total: number };
     throw new MismatchError(d.computed_total, d.printed_total);
   }
+  if (Array.isArray(detail) && detail[0]?.msg) throw new Error(String(detail[0].msg).replace(/^Value error, /, ''));
   throw new Error(typeof detail === 'string' ? detail : 'Could not create the bill. Check your connection and try again.');
 }
 
@@ -73,3 +77,37 @@ export async function uploadImage(billId: string, adminToken: string, uri: strin
     return false;
   }
 }
+
+export interface AdminPayment {
+  id: string; status: string; amount: number; reference: string; participant_id: string;
+  participant_name: string; payer_note: string | null; created_at: string;
+}
+export interface AdminBill {
+  id: string; store: string; currency: string; share_token: string; status: string;
+  totals: { total: number; assigned: number; unassigned: number; collected: number; awaiting: number; outstanding: number };
+  participants: { id: string; name: string; total: number; payment: { status: string; amount: number } | null }[];
+  payments: AdminPayment[];
+  payee: { name: string | null } | null;
+}
+
+async function admin<T>(id: string, token: string, path = '', init: RequestInit = {}): Promise<T> {
+  const res = await fetch(`${API_URL}/api/bills/${id}${path}`, {
+    ...init,
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token, ...(init.headers ?? {}) },
+  });
+  if (!res.ok) {
+    let msg = 'Request failed.';
+    try {
+      const d = (await res.json()).detail;
+      msg = typeof d === 'string' ? d : d?.message ?? msg;
+    } catch { /* keep default */ }
+    throw new Error(msg);
+  }
+  return res.json() as Promise<T>;
+}
+
+export const getAdminBill = (id: string, token: string) => admin<AdminBill>(id, token);
+export const confirmPayment = (id: string, token: string, paymentId: string) =>
+  admin<AdminBill>(id, token, `/payments/${paymentId}/confirm`, { method: 'POST', body: JSON.stringify({ note: 'Confirmed in TABLY app' }) });
+export const rejectPayment = (id: string, token: string, paymentId: string) =>
+  admin<AdminBill>(id, token, `/payments/${paymentId}/reject`, { method: 'POST', body: JSON.stringify({ note: 'Not received' }) });

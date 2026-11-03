@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import get_settings
 from .db import Base, engine
-from .routes import bills, public
+from .routes import bills, public, webhooks
 
 
 @asynccontextmanager
@@ -47,6 +47,7 @@ def health():
 
 app.include_router(bills)
 app.include_router(public)
+app.include_router(webhooks)
 
 _dist = Path(get_settings().web_dist)
 if _dist.is_dir():

@@ -42,6 +42,7 @@ export default function ShareScreen() {
       </View>
       <View style={{ gap: space.sm }}>
         <Button label="Share link" onPress={() => Share.share({ message: `Pick what you had on our bill at ${bill.store}: ${url}`, url })} />
+        <Button label="View payments" variant="quiet" onPress={() => router.replace({ pathname: '/bill/[id]', params: { id: bill.id } })} />
         <Button label="Done" variant="quiet" onPress={() => router.replace('/')} />
       </View>
     </SafeAreaView>

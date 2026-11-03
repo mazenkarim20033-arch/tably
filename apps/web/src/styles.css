@@ -93,3 +93,23 @@ h1 { font-size: 28px; letter-spacing: -.6px; margin-top: 4px; }
 .item.multi .name { flex: 1; min-width: 0; }
 .item.multi .controls { flex-basis: 100%; display: flex; align-items: center; justify-content: space-between; padding-left: 36px; }
 .adj { color: var(--text-3); font-size: 13px; }
+
+/* Phase 5: payment panel */
+.pay.done { background: var(--success); }
+.sheet-backdrop { position: fixed; inset: 0; background: rgba(5, 8, 20, .55); display: flex; align-items: flex-end; justify-content: center; z-index: 10; }
+.sheet { position: relative; width: 100%; max-width: 480px; max-height: 90vh; overflow: auto; background: var(--bg); border-radius: 24px 24px 0 0; padding: 28px 20px calc(24px + env(safe-area-inset-bottom)); display: grid; gap: 12px; }
+.sheet h2 { font-size: 24px; letter-spacing: -.5px; padding-right: 40px; }
+.sheet .close { position: absolute; top: 14px; right: 14px; width: 36px; height: 36px; border-radius: 50%; border: 0; background: var(--muted); color: var(--text); font-size: 20px; cursor: pointer; }
+.sheet input { padding: 14px 16px; border-radius: 14px; border: 1.5px solid var(--border); background: var(--surface); color: var(--text); font: inherit; }
+.sheet .primary { border: 0; border-radius: 999px; padding: 15px; font: 600 16px inherit; color: #fff; background: linear-gradient(135deg, var(--accent), var(--accent-2)); cursor: pointer; }
+.sheet .quiet { border: 0; border-radius: 999px; padding: 14px; font: 500 15px inherit; color: var(--text-2); background: var(--muted); cursor: pointer; }
+.sheet button:disabled { opacity: .5; cursor: default; }
+.copyrow { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
+.copyrow small { display: block; color: var(--text-3); font-size: 12px; }
+.copyrow strong { word-break: break-all; font-weight: 600; }
+.copyrow button { border: 0; border-radius: 999px; padding: 6px 14px; background: var(--muted); color: var(--text); font: 500 13px inherit; cursor: pointer; }
+.linkbtn { display: block; text-align: center; padding: 13px; border-radius: 14px; border: 1.5px solid var(--accent); color: var(--accent); text-decoration: none; font-weight: 600; }
+.steps { margin: 0; padding-left: 20px; color: var(--text-2); font-size: 14px; display: grid; gap: 6px; }
+.st { font-size: 13px; color: var(--text-3); }
+.st-verified { color: var(--success); }
+.st-failed, .st-expired { color: #D6455D; }

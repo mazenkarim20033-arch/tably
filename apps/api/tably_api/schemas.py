@@ -31,6 +31,7 @@ class BillCreate(StrictModel):
     printed_total: Money | None = None
     # The creator has seen that items do not add up to the printed total and wants to go ahead.
     accept_mismatch: bool = False
+    payee: "PayeeIn | None" = None
 
 
 class ParticipantCreate(StrictModel):
@@ -62,3 +63,38 @@ class LinkUpdate(StrictModel):
     disabled: bool | None = None
     extend_days: int | None = Field(default=None, ge=1, le=365)
     rotate: bool = False
+
+
+class PayeeIn(StrictModel):
+    """Where friends send money. At least one of address, phone or link."""
+
+    payee_name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=60)]
+    instapay_address: str | None = Field(default=None, pattern=r"^[A-Za-z0-9._-]{2,40}@[A-Za-z]{2,20}$")
+    instapay_phone: str | None = Field(default=None, pattern=r"^01[0125]\d{8}$")
+    instapay_link: str | None = Field(default=None, max_length=300)
+
+    @model_validator(mode="after")
+    def _check(self):
+        from .providers import link_host_allowed
+
+        if not (self.instapay_address or self.instapay_phone or self.instapay_link):
+            raise ValueError("add an InstaPay address, phone number or payment link")
+        if self.instapay_link and not link_host_allowed(self.instapay_link):
+            raise ValueError("payment link must be an https link on an allowed InstaPay host")
+        if self.instapay_address:
+            self.instapay_address = self.instapay_address.lower()
+        return self
+
+
+class PaymentCreate(StrictModel):
+    provider: str = Field(default="manual_instapay", max_length=30)
+
+
+class PaidBody(StrictModel):
+    payer_note: Annotated[str, StringConstraints(strip_whitespace=True, max_length=80)] | None = None
+
+
+class ReviewBody(StrictModel):
+    note: Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)] = ""
+
+BillCreate.model_rebuild()

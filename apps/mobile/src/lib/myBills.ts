@@ -41,3 +41,29 @@ export async function saveBill(bill: MyBill, adminToken: string): Promise<void> 
 export const getAdminToken = (id: string) => SecureStore.getItemAsync(tokenKey(id));
 
 export const shareUrl = (token: string) => `${WEB_URL}/s/${token}`;
+
+/** The last payment details used, so the next bill is one tap faster. Not secret, but personal: stays on the phone. */
+export interface SavedPayee { payee_name: string; instapay_address?: string; instapay_phone?: string; instapay_link?: string }
+
+function payeeFile(): File {
+  const dir = new Directory(Paths.document, 'bills');
+  dir.create({ intermediates: true, idempotent: true });
+  return new File(dir, 'payee.json');
+}
+
+export async function loadPayee(): Promise<SavedPayee | null> {
+  try {
+    const f = payeeFile();
+    return f.exists ? (JSON.parse(await f.text()) as SavedPayee) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function savePayee(p: SavedPayee): Promise<void> {
+  try {
+    const f = payeeFile();
+    f.create({ overwrite: true });
+    await f.write(JSON.stringify(p));
+  } catch { /* best effort */ }
+}

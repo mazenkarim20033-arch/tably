@@ -26,7 +26,11 @@ def _extras(bill: Bill) -> dict[str, int]:
     }
 
 
-def compute_state(bill: Bill, claims: list[Claim]) -> dict:
+class ClaimLocked(Exception):
+    """Someone with a live or settled payment holds a share of this item, so it can no longer change."""
+
+
+def compute_state(bill: Bill, claims: list[Claim], pinned: dict[str, int] | None = None) -> dict:
     """Per-item holders, per-participant totals and bill totals.
 
     Per item: exclusive units are priced per unit; the remaining units form a pool split equally among
@@ -95,6 +99,13 @@ def compute_state(bill: Bill, claims: list[Claim]) -> dict:
             {"id": t.id, "payer_id": t.payer_id, "beneficiary_id": t.beneficiary_id, "amount": moved, "note": t.note}
         )
 
+    # Someone who has started or finished paying owes exactly what they were asked to pay. Any cent of
+    # rounding drift this causes lands in "unassigned" rather than moving their number.
+    pinned = pinned or {}
+    for n, p in enumerate(people):
+        if p.id in pinned:
+            totals[n] = pinned[p.id]
+
     items_sum = sum(i.line_total for i in bill.items)
     participants_out = []
     for n, p in enumerate(people):
@@ -102,6 +113,7 @@ def compute_state(bill: Bill, claims: list[Claim]) -> dict:
         row.update({k: parts[k][n] for k in extras})
         row["adjustment"] = adjustment[n]
         row["total"] = totals[n]
+        row["pinned"] = p.id in pinned
         participants_out.append(row)
 
     assigned = sum(totals)
@@ -138,7 +150,8 @@ def bump(db: Session, bill_id: str) -> None:
 
 
 def set_claim(
-    db: Session, bill: Bill, participant: Participant, item_id: str, units: int | None = None, share: bool | None = None
+    db: Session, bill: Bill, participant: Participant, item_id: str, units: int | None = None,
+    share: bool | None = None, locked_ids: frozenset[str] = frozenset(),
 ) -> None:
     """Atomically change one participant's hold on an item.
 
@@ -166,6 +179,17 @@ def set_claim(
         )
     )
     existing = db.get(Claim, (participant.id, item_id))
+
+    if participant.id in locked_ids:
+        db.rollback()
+        raise ClaimLocked()
+    if locked_ids and db.scalar(
+        select(func.count()).select_from(Claim).where(
+            Claim.item_id == item_id, Claim.shared.is_(True), Claim.participant_id.in_(locked_ids)
+        )
+    ):
+        db.rollback()
+        raise ClaimLocked()
 
     if share is True:
         if item.quantity - others_excl < 1:

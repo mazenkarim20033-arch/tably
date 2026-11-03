@@ -7,17 +7,25 @@ export interface BillItem {
   remaining: number;
   claims: Holder[];
 }
+export type PaymentStatus = "initiated" | "awaiting_confirmation" | "verified" | "failed" | "expired" | "cancelled";
+export interface PaymentSummary { id: string; status: PaymentStatus; amount: number; reference: string; provider: string }
+export interface Payee { name: string | null; instapay_address: string | null; instapay_phone: string | null; instapay_link: string | null }
+export interface PaymentMethod { key: string; label: string; automated: boolean; enabled: boolean; reason: string }
 export interface PersonTotal {
   id: string; name: string; items_total: number; discounts: number; tax: number; service: number; tip: number;
   /** money moved to or from this person by the bill creator (+ covers others, − is covered) */
   adjustment: number;
   total: number;
+  /** true once this person has started paying: their amount no longer moves */
+  pinned: boolean;
+  payment: PaymentSummary | null;
 }
 export interface Transfer { id: string; payer_id: string; beneficiary_id: string; amount: number; note: string }
 export interface BillView {
   store: string; date: string | null; currency: string; status: 'open' | 'closed';
   items: BillItem[]; participants: PersonTotal[]; transfers: Transfer[];
-  totals: { items: number; discounts: number; tax: number; service: number; tip: number; total: number; assigned: number; unassigned: number };
+  totals: { items: number; discounts: number; tax: number; service: number; tip: number; total: number; assigned: number; unassigned: number; collected: number; awaiting: number; outstanding: number };
+  payee: Payee | null; payment_methods: PaymentMethod[];
 }
 export interface Me { id: string; token: string; name: string }
 
@@ -59,3 +67,23 @@ export const setClaim = (token: string, me: Me, itemId: string, change: ClaimCha
     headers: { 'Content-Type': 'application/json', 'X-Participant-Id': me.id, 'X-Participant-Token': me.token },
     body: JSON.stringify({ item_id: itemId, ...change }),
   });
+
+export interface PaymentDetails {
+  payment: PaymentSummary & { currency: string };
+  instructions: { payee_name?: string | null; instapay_address?: string | null; instapay_phone?: string | null; instapay_link?: string | null; steps?: string[] };
+}
+
+const authHeaders = (me: Me) => ({ "Content-Type": "application/json", "X-Participant-Id": me.id, "X-Participant-Token": me.token });
+const pay = (token: string) => `/api/s/${encodeURIComponent(token)}/payments`;
+
+export const startPayment = (token: string, me: Me, idempotencyKey: string) =>
+  call<PaymentDetails>(pay(token), { method: "POST", headers: { ...authHeaders(me), "Idempotency-Key": idempotencyKey }, body: JSON.stringify({ provider: "manual_instapay" }) });
+
+export const getPayment = (token: string, me: Me, id: string) =>
+  call<PaymentDetails>(`${pay(token)}/${id}`, { headers: authHeaders(me) });
+
+export const markPaid = (token: string, me: Me, id: string, payerNote: string) =>
+  call<PaymentDetails>(`${pay(token)}/${id}/paid`, { method: "POST", headers: authHeaders(me), body: JSON.stringify(payerNote ? { payer_note: payerNote } : {}) });
+
+export const cancelPayment = (token: string, me: Me, id: string) =>
+  call<PaymentDetails>(`${pay(token)}/${id}/cancel`, { method: "POST", headers: authHeaders(me) });

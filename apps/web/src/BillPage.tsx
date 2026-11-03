@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { formatAmount } from '@tably/core';
+import { PayPanel, STATUS_LABEL, statusOf } from "./PayPanel";
 import { ApiError, getBill, join, setClaim, type BillItem, type BillView, type ClaimChange, type Me } from './api';
 
 const POLL_MS = 3000;
@@ -21,6 +22,7 @@ export function BillPage({ token }: { token: string }) {
   const [fatal, setFatal] = useState<{ status: number; message: string } | null>(null);
   const [me, setMe] = useState<Me | null>(() => loadMe(token));
   const [toast, setToast] = useState<string | null>(null);
+  const [paying, setPaying] = useState(false);
   const busy = useRef(0);
 
   const refresh = useCallback(async () => {
@@ -154,10 +156,17 @@ export function BillPage({ token }: { token: string }) {
                 </span>
               )}
             </div>
-            <span className="soon">Payment coming soon</span>
+            {mine.total > 0 && bill.status === "open" && (bill.payee ? (
+              <button className={statusOf(mine) === "verified" ? "pay done" : "pay"} onClick={() => setPaying(true)}>
+                {statusOf(mine) === "unpaid" || statusOf(mine) === "failed" || statusOf(mine) === "expired" || statusOf(mine) === "cancelled" ? "Pay" : STATUS_LABEL[statusOf(mine)]}
+              </button>
+            ) : (
+              <span className="soon">The bill creator has not added payment details yet</span>
+            ))}
           </div>
         </div>
       )}
+      {paying && me && mine && <PayPanel token={token} me={me} bill={bill} mine={mine} onClose={() => setPaying(false)} onChanged={() => void refresh()} />}
       {toast && <div className="toast" role="status">{toast}</div>}
     </>
   );
@@ -263,10 +272,11 @@ function Progress({ bill }: { bill: BillView }) {
           ? 'Everything is claimed.'
           : `${formatAmount(bill.totals.unassigned, bill.currency)} still unclaimed`}
       </p>
+      {bill.totals.collected > 0 && <p>{formatAmount(bill.totals.collected, bill.currency)} confirmed paid of {formatAmount(bill.totals.total, bill.currency)}</p>}
       {bill.participants.length > 0 && (
         <ul className="people">
           {bill.participants.map((p) => (
-            <li key={p.id}><span>{p.name}{p.adjustment !== 0 && <small className="adj">{p.adjustment > 0 ? " covers " + formatAmount(p.adjustment, bill.currency) + " for others" : " · " + formatAmount(-p.adjustment, bill.currency) + " covered"}</small>}</span><span>{formatAmount(p.total, bill.currency)}</span></li>
+            <li key={p.id}><span>{p.name}{p.payment && <small className={"st st-" + p.payment.status}>{" · " + STATUS_LABEL[statusOf(p)]}</small>}{p.adjustment !== 0 && <small className="adj">{p.adjustment > 0 ? " covers " + formatAmount(p.adjustment, bill.currency) + " for others" : " · " + formatAmount(-p.adjustment, bill.currency) + " covered"}</small>}</span><span>{formatAmount(p.total, bill.currency)}</span></li>
           ))}
         </ul>
       )}

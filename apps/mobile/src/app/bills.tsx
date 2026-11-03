@@ -24,7 +24,7 @@ export default function Bills() {
         contentContainerStyle={{ gap: space.sm }}
         renderItem={({ item }) => (
           <Pressable
-            onPress={() => router.push({ pathname: '/share', params: { id: item.id } })}
+            onPress={() => router.push({ pathname: '/bill/[id]', params: { id: item.id } })}
             style={{ padding: space.md, borderRadius: radius.md, backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, flexDirection: 'row', justifyContent: 'space-between' }}
           >
             <View>

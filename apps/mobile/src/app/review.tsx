@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert, Image, Pressable, ScrollView, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -11,19 +11,42 @@ import { AmountField, TextField } from '../components/Fields';
 import { useTheme } from '../theme/ThemeProvider';
 import { updateDraft, useDraft } from '../lib/draftStore';
 import { createBill, MismatchError, uploadImage } from '../lib/billsApi';
-import { saveBill } from '../lib/myBills';
+import { loadPayee, savePayee, saveBill } from '../lib/myBills';
 
 export default function Review() {
   const { colors, space, radius } = useTheme();
   const draft = useDraft();
   const [showImage, setShowImage] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [payeeName, setPayeeName] = useState('');
+  const [ipa, setIpa] = useState('');
+  const [phone, setPhone] = useState('');
+  const [link, setLink] = useState('');
+
+  useEffect(() => {
+    void loadPayee().then((p) => {
+      if (!p) return;
+      setPayeeName(p.payee_name);
+      setIpa(p.instapay_address ?? '');
+      setPhone(p.instapay_phone ?? '');
+      setLink(p.instapay_link ?? '');
+    });
+  }, []);
+
+  const payee = {
+    payee_name: payeeName.trim(),
+    ...(ipa.trim() ? { instapay_address: ipa.trim() } : {}),
+    ...(phone.trim() ? { instapay_phone: phone.trim() } : {}),
+    ...(link.trim() ? { instapay_link: link.trim() } : {}),
+  };
+  const hasPayee = payee.payee_name !== '' && Object.keys(payee).length > 1;
 
   async function create(acceptMismatch = false) {
     if (!draft) return;
     setCreating(true);
     try {
-      const made = await createBill(draft.receipt, acceptMismatch);
+      const made = await createBill(draft.receipt, acceptMismatch, hasPayee ? payee : undefined);
+      if (hasPayee) void savePayee(payee);
       if (draft.imageUri) void uploadImage(made.id, made.admin_token, draft.imageUri);
       const rec = reconcile(draft.receipt);
       await saveBill(
@@ -117,6 +140,13 @@ export default function Review() {
             {r.unparsed.map((u, n) => <Text key={n} style={{ color: colors.textFaint, fontSize: 14 }}>· {u}</Text>)}
           </View>
         )}
+
+        <Text style={{ color: colors.text, fontSize: 18, fontWeight: '600', marginTop: space.md }}>Where should friends pay you?</Text>
+        <Text style={{ color: colors.textMuted, fontSize: 14 }}>Shown to people with your link. They send money from their own bank app; you confirm each payment yourself. Add at least one of address, phone or link.</Text>
+        <TextField label="Your name" value={payeeName} onChange={setPayeeName} placeholder="Shown to friends" />
+        <TextField label="InstaPay address" value={ipa} onChange={setIpa} placeholder="name@instapay" autoCapitalize="none" autoCorrect={false} />
+        <TextField label="Phone number linked to InstaPay" value={phone} onChange={setPhone} placeholder="01012345678" keyboardType="number-pad" />
+        <TextField label="InstaPay payment link (optional)" value={link} onChange={setLink} placeholder="https://ipn.eg/..." autoCapitalize="none" autoCorrect={false} />
 
         <Text style={{ color: colors.text, fontSize: 18, fontWeight: '600', marginTop: space.md }}>Totals</Text>
         {money('subtotal', 'Subtotal (as printed)')}

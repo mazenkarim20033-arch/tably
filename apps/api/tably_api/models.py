@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import (
+    Index, text,
     BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Integer, String, UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -34,6 +35,11 @@ class Bill(Base):
     tax_included: Mapped[bool] = mapped_column(Boolean, default=False)
     printed_total: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     status: Mapped[str] = mapped_column(String(10), default="open")  # open | closed
+    # Where friends pay the creator (manual InstaPay). Any one of address / phone / link is enough.
+    payee_name: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    instapay_address: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    instapay_phone: Mapped[str | None] = mapped_column(String(11), nullable=True)
+    instapay_link: Mapped[str | None] = mapped_column(String(300), nullable=True)
     # Bumped on every change a viewer could see; the live-update stream watches it.
     version: Mapped[int] = mapped_column(Integer, default=0)
 
@@ -111,3 +117,61 @@ class Transfer(Base):
     amount: Mapped[int] = mapped_column(BigInteger)
     note: Mapped[str] = mapped_column(String(80), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+ACTIVE_STATUSES = ("initiated", "awaiting_confirmation")
+PINNING_STATUSES = ("initiated", "awaiting_confirmation", "verified")
+
+
+class Payment(Base):
+    """One attempt by a participant to pay the creator. No row means unpaid.
+
+    Status moves only through payments.transition(); `verified` needs the creator's review or an
+    authenticated provider event, never the payer's own say-so.
+    """
+
+    __tablename__ = "payments"
+    __table_args__ = (
+        UniqueConstraint("bill_id", "reference", name="uq_payment_reference"),
+        UniqueConstraint("participant_id", "idempotency_key", name="uq_payment_idempotency"),
+        CheckConstraint("amount > 0", name="ck_payment_amount"),
+        # At most one live or settled payment per participant: blocks duplicate payment records.
+        Index(
+            "uq_payment_one_live",
+            "participant_id",
+            unique=True,
+            postgresql_where=text("status IN ('initiated','awaiting_confirmation','verified')"),
+            sqlite_where=text("status IN ('initiated','awaiting_confirmation','verified')"),
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_id)
+    bill_id: Mapped[str] = mapped_column(ForeignKey("bills.id", ondelete="CASCADE"), index=True)
+    participant_id: Mapped[str] = mapped_column(ForeignKey("participants.id", ondelete="CASCADE"), index=True)
+    provider: Mapped[str] = mapped_column(String(30))
+    amount: Mapped[int] = mapped_column(BigInteger)  # snapshot of what the payer was asked to send
+    currency: Mapped[str] = mapped_column(String(3))
+    status: Mapped[str] = mapped_column(String(24), default="initiated")
+    reference: Mapped[str] = mapped_column(String(16))  # printed in the bank transfer note for reconciliation
+    external_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    payer_note: Mapped[str | None] = mapped_column(String(80), nullable=True)  # payer's own bank reference
+    idempotency_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    events: Mapped[list[PaymentEvent]] = relationship(order_by="PaymentEvent.at", cascade="all, delete-orphan")
+
+
+class PaymentEvent(Base):
+    """Append-only audit trail of every status change, and the idempotency record for provider events."""
+
+    __tablename__ = "payment_events"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_id)
+    payment_id: Mapped[str] = mapped_column(ForeignKey("payments.id", ondelete="CASCADE"), index=True)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    actor: Mapped[str] = mapped_column(String(12))  # payer | creator | provider | system
+    from_status: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    to_status: Mapped[str] = mapped_column(String(24))
+    note: Mapped[str] = mapped_column(String(200), default="")
+    provider_event_id: Mapped[str | None] = mapped_column(String(100), nullable=True, unique=True)
