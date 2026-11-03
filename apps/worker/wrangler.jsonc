@@ -1,0 +1,33 @@
+{
+  // TABLY API + shared bill page on Cloudflare Workers (free plan). The permanent address is
+  // https://tably-api.<your-account-subdomain>.workers.dev, decided once at the first deploy.
+  "name": "tably-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-09-01",
+
+  // The built shared-bill web app. /api/* goes to the Worker; every other path is a static file, and unknown
+  // paths such as /s/<token> get index.html so the page can read the token from the address.
+  "assets": {
+    "directory": "../web/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+
+  // The database id is filled in by `wrangler d1 create tably` at deploy time (docs/cloudflare.md).
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "tably",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  "vars": {
+    "SHARE_LINK_DAYS": "30",
+    "PAYMENT_LINK_HOSTS": "ipn.eg"
+  },
+
+  "observability": { "enabled": true }
+}
