@@ -103,21 +103,26 @@ const centreY = (l: OcrLine, slope: number) => l.y + l.h / 2 - slope * (l.x + l.
 /** Group fragments that sit on the same line once the page tilt (a vertical shear per unit of x) is removed. */
 export function groupFragments(lines: OcrLine[], slope: number): OcrLine[][] {
   const sorted = [...lines].sort((a, b) => centreY(a, slope) - centreY(b, slope));
+  // A long line on a tilted page has a tall bounding box; its height says nothing about the spacing of lines.
+  // Heights are capped near the receipt's normal text height (a low percentile of all fragments).
+  const heights = lines.map((l) => l.h).sort((a, b) => a - b);
+  const cap = heights.length ? heights[Math.floor((heights.length - 1) * 0.25)]! * 1.3 : Infinity;
   const groups: Array<{ items: OcrLine[]; sum: number; hSum: number }> = [];
   for (const l of sorted) {
     const c = centreY(l, slope);
+    const h = Math.min(l.h, cap);
     const g = groups[groups.length - 1];
     if (g) {
       const mean = g.sum / g.items.length;
       const meanH = g.hSum / g.items.length;
-      if (Math.abs(c - mean) < Math.min(l.h, meanH) * 0.6) {
+      if (Math.abs(c - mean) < Math.min(h, meanH) * 0.6) {
         g.items.push(l);
         g.sum += c;
-        g.hSum += l.h;
+        g.hSum += h;
         continue;
       }
     }
-    groups.push({ items: [l], sum: c, hSum: l.h });
+    groups.push({ items: [l], sum: c, hSum: h });
   }
   return groups.map((g) => g.items);
 }
@@ -339,6 +344,136 @@ function attachOrphans(rows: Row[], from: number, slope: number): Row[] {
     qtyTaken.add(p.label);
   }
   return out.filter((_, i) => !gone.has(i));
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Pairing by order (independent of page tilt)
+// ---------------------------------------------------------------------------------------------------------------
+
+const cxOf = (l: OcrLine) => l.x + l.w / 2;
+const cyOf = (l: OcrLine) => l.y + l.h / 2;
+
+function median(xs: number[]): number {
+  if (xs.length === 0) return 0;
+  const s = [...xs].sort((a, b) => a - b);
+  const m = s.length >> 1;
+  return s.length % 2 ? s[m]! : (s[m - 1]! + s[m]!) / 2;
+}
+
+const MONEY_LABELS: Kind[] = ['subtotal', 'tax', 'service', 'tip', 'total', 'discount'];
+const PRICE_HEADER = /^(price|amount|value|rate|total|السعر|القيمه|الاجمالي)$/i;
+
+/**
+ * A crooked, curved or keystoned photo moves the price column up or down against the names by anything from a few
+ * pixels to a whole line, and no single tilt value fixes that for every row. Order does not change: the third price
+ * in the column belongs to the third name. So inside the item table (and the totals block) the Nth price is paired
+ * with the Nth name, the page's local tilt is measured from those pairs, and every fragment is straightened with it.
+ * Returns null whenever the counts do not line up or the layout is not a name-column / price-column table; the
+ * tilt-based reading is used then. The receipt's own arithmetic still decides which reading is kept.
+ */
+export function straightenByOrder(lines: OcrLine[]): OcrLine[] | null {
+  if (lines.length < 8) return null;
+  const headers = lines.filter((l) => isHeaderish(l.text) || isHeaderRow(l.text)).sort((a, b) => cyOf(a) - cyOf(b));
+  if (headers.length === 0) return null;
+  const group = headers.filter((h) => Math.abs(cyOf(h) - cyOf(headers[0]!)) < 0.05);
+  const headBottom = Math.max(...group.map(cyOf));
+  const priceHead = group.find((h) => PRICE_HEADER.test(normalizeArabic(h.text.trim())));
+  const priceTop = priceHead ? cyOf(priceHead) : headBottom;
+  // The receipt's normal text height: a low percentile, since long tilted lines have inflated boxes.
+  const hSorted = lines.map((l) => l.h).sort((a, b) => a - b);
+  const hText = hSorted[Math.floor((hSorted.length - 1) * 0.15)]!;
+
+  // Where the item table ends: the first subtotal / tax / service / total label under the header.
+  const labelRows = lines.filter((l) => cyOf(l) > headBottom && MONEY_LABELS.includes(classify(l.text)));
+  const endY = labelRows.length ? Math.min(...labelRows.map(cyOf)) - 0.4 * hText : Infinity;
+  const inTable = (l: OcrLine) => cyOf(l) > headBottom && cyOf(l) < endY;
+
+  // Names: Latin text in the table that is not a number, a header word or a non-item line. Arabic captions are not
+  // names (a bilingual receipt prints one under or beside each item); an all-Arabic receipt is left to the tilt reader.
+  const named = lines.filter(
+    (l) => inTable(l) && LATIN.test(l.text) && (l.text.match(/[A-Za-z]/g) ?? []).length >= 3 &&
+      !isAmountOnly(l.text) && !isHeaderish(l.text) && classify(l.text) === 'item',
+  );
+  const left = median(named.map((l) => l.x));
+  const names = named.length >= 2 ? named.filter((l) => Math.abs(l.x - left) < 0.12).sort((a, b) => cyOf(a) - cyOf(b)) : [];
+  // Rows whose price is already part of the same fragment need no pairing.
+  const needPrice = names.filter((n) => splitAmounts(n.text).raw.length === 0);
+
+  // Prices: separate fragments holding only an amount, in the price column below the header.
+  const amounts = lines.filter((l) => cyOf(l) > priceTop && isAmountOnly(l.text) && !names.includes(l));
+  const column = median(amounts.map(cxOf));
+  const inColumn = amounts.filter((l) => Math.abs(cxOf(l) - column) < 0.15).sort((a, b) => cyOf(a) - cyOf(b));
+  if (inColumn.length < needPrice.length) return null;
+  const prices = inColumn.slice(0, needPrice.length);
+  const rest = inColumn.slice(needPrice.length);
+
+  // Totals block: when every orphan amount below the table has a label, they pair in order too.
+  const labels = lines
+    .filter((l) => cyOf(l) >= endY && MONEY_LABELS.includes(classify(l.text)) && splitAmounts(l.text).raw.length === 0)
+    .sort((a, b) => cyOf(a) - cyOf(b));
+  const pairTotals = labels.length > 0 && labels.length === rest.length;
+
+  // Every row is anchored where its baseline meets one common vertical line (the left edge of the names), so a long
+  // line and a short one, or a row that starts with its quantity, do not end up at different heights on a tilted page.
+  interface Anchor { x: number; y: number; slope: number }
+  const slopeOf = (a: OcrLine, b: OcrLine) => (Math.abs(cxOf(b) - cxOf(a)) > 0.2 ? (cyOf(b) - cyOf(a)) / (cxOf(b) - cxOf(a)) : null);
+  const known = (xs: Array<number | null>) => xs.filter((v): v is number => v !== null);
+  const samples = needPrice.map((n, k) => slopeOf(n, prices[k]!));
+  const totalSamples = pairTotals ? labels.map((lab, k) => slopeOf(lab, rest[k]!)) : [];
+  const all = [...known(samples), ...known(totalSamples)];
+  if (all.length === 0) return null;
+  const globalSlope = median(all);
+  if (Math.abs(globalSlope) > 0.25) return null;
+  const refX = names.length > 0 ? left : median(labels.map((l) => l.x));
+  const anchorFor = (l: OcrLine, slope: number): Anchor => ({ x: refX, y: cyOf(l) - slope * (cxOf(l) - refX), slope });
+
+  const snap = new Map<OcrLine, Anchor>(); // fragment -> the row it belongs to
+  const anchors: Anchor[] = [];
+  const rowOf = new Map<OcrLine, Anchor>();
+  names.forEach((n) => {
+    const k = needPrice.indexOf(n);
+    const near = k < 0 ? [] : known(samples.slice(Math.max(0, k - 2), k + 3));
+    const a = anchorFor(n, near.length ? median(near) : globalSlope);
+    anchors.push(a);
+    rowOf.set(n, a);
+  });
+  needPrice.forEach((n, k) => snap.set(prices[k]!, rowOf.get(n)!));
+
+  // Quantities: one per name, in the column left of the names.
+  const qtys = lines.filter((l) => inTable(l) && isQtyOnly(l.text) && cxOf(l) < left && !snap.has(l)).sort((a, b) => cyOf(a) - cyOf(b));
+  if (names.length > 0 && qtys.length === names.length) qtys.forEach((q, k) => snap.set(q, rowOf.get(names[k]!)!));
+
+  if (pairTotals) {
+    labels.forEach((lab, k) => {
+      const near = known(totalSamples.slice(Math.max(0, k - 1), k + 2));
+      const a = anchorFor(lab, near.length ? median(near) : globalSlope);
+      anchors.push(a);
+      rowOf.set(lab, a);
+      snap.set(rest[k]!, a);
+    });
+  }
+  if (anchors.length === 0) return null;
+  anchors.sort((a, b) => a.y - b.y);
+
+  const pitch = names.length > 2 ? median(names.slice(1).map((n, i) => rowOf.get(n)!.y - rowOf.get(names[i]!)!.y)) : 0.03;
+  const textH = hText * 1.15;
+  return lines.map((l) => {
+    let yc: number;
+    const own = rowOf.get(l) ?? snap.get(l);
+    if (own) yc = own.y;
+    else {
+      // Straighten along the nearest row's baseline; text that sits on it joins the row, text between rows
+      // (a caption on its own line) keeps its offset from it.
+      let best = { d: Infinity, a: anchors[0]!, res: 0 };
+      for (const a of anchors) {
+        const res = cyOf(l) - (a.y + a.slope * (cxOf(l) - a.x));
+        if (Math.abs(res) < best.d) best = { d: Math.abs(res), a, res };
+      }
+      yc = best.a.y + (best.d <= 0.3 * pitch ? 0 : best.res);
+    }
+    const h = Math.min(l.h, textH);
+    return { ...l, y: yc - h / 2, h };
+  });
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -795,6 +930,13 @@ export function candidateSlopes(lines: OcrLine[]): number[] {
 export function parseReceipt(lines: OcrLine[]): Receipt {
   const clean = lines.filter((l) => l.text.trim().length > 0);
   let best: { receipt: Receipt; score: number } | null = null;
+  // Pairing by order first: when its counts line up it is the most reliable reading, so it also gets a head start
+  // that only a tilt-based reading with exact arithmetic can overcome.
+  const ordered = straightenByOrder(clean);
+  if (ordered) {
+    const attempt = parseWithSlope(ordered, 0);
+    best = { receipt: attempt.receipt, score: attempt.score + 70 };
+  }
   for (const slope of candidateSlopes(clean)) {
     const attempt = parseWithSlope(clean, slope);
     if (!best || attempt.score > best.score + 1e-9) best = attempt; // ties keep the geometrically best tilt

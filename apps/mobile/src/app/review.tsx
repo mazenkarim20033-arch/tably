@@ -129,11 +129,11 @@ export default function Review() {
         {(r.notes ?? []).map((n) => (
           <Text key={n} style={{ color: colors.textMuted, fontSize: 14 }}>• {n}</Text>
         ))}
-        {r.uncertain.length > 0 && (
+        {r.uncertain.some((u) => u !== 'merchant' && !u.endsWith('.description')) && (
           <Text style={{ color: colors.textMuted, fontSize: 14 }}>Fields outlined in amber were hard to read or were calculated. Edit or tap into one to confirm it.</Text>
         )}
 
-        <TextField label="Store" value={r.merchant ?? ''} uncertain={flagged('merchant')} onChange={(v) => edit(setField(r, 'merchant', v))} placeholder="Restaurant name" />
+        <TextField label="Store" value={r.merchant ?? ''} onChange={(v) => edit(setField(r, 'merchant', v))} placeholder="Restaurant name" />
         <View style={{ flexDirection: 'row', gap: space.sm }}>
           <TextField label="Date (YYYY-MM-DD)" width="62%" value={r.date ?? ''} uncertain={flagged('date')} onChange={(v) => edit(setField(r, 'date', v === '' ? null : v))} placeholder="2026-11-03" autoCapitalize="none" />
           <TextField label="Currency" width="34%" value={r.currency} uncertain={flagged('currency')} onChange={(v) => edit(setField(r, 'currency', v.toUpperCase().slice(0, 3)))} autoCapitalize="characters" />
@@ -142,7 +142,7 @@ export default function Review() {
         <Text style={{ color: colors.text, fontSize: 18, fontWeight: '600', marginTop: space.md }}>Items</Text>
         {r.items.map((i) => (
           <View key={i.id} style={{ backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, borderRadius: radius.md, padding: space.md, gap: space.sm }}>
-            <TextField value={i.description} uncertain={flagged(`items.${i.id}.description`)} onChange={(v) => edit(setItemDescription(r, i.id, v))} placeholder="Item" />
+            <TextField value={i.description} onChange={(v) => edit(setItemDescription(r, i.id, v))} placeholder="Item" />
             {i.suggestedLineTotal !== undefined && i.suggestedLineTotal !== i.lineTotal && (
               <View style={{ gap: 6 }}>
                 <Text style={{ color: colors.warning, fontSize: 13 }}>
