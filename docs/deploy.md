@@ -53,19 +53,16 @@ Check it: `python scripts/smoke.py https://your-app.onrender.com` (should print 
 
 ## 3. Build the iPhone app (GitHub Actions, free)
 
-The build file is saved as `ci/ios-unsigned.workflow.yml` because GitHub refuses to accept workflow files from the
-command-line login used so far. Activate it once in the browser:
+The workflow `.github/workflows/ios-unsigned.yml` builds an unsigned IPA on a GitHub macOS machine (it calls
+`scripts/ci-ios-build.sh`). JavaScript packages, CocoaPods and compiled iOS code are cached, so repeat builds are much faster than the first.
 
-1. On github.com open the repo, `ci/ios-unsigned.workflow.yml`, click the pencil.
-2. Change the path at the top to `.github/workflows/ios-unsigned.yml`, then **Commit changes**.
-3. Repo **Settings > Secrets and variables > Actions > Variables > New repository variable**:
-   name `API_URL`, value your backend address (for example `https://your-app.onrender.com`, no trailing slash).
-4. **Actions** tab > "Build unsigned iOS IPA" > **Run workflow**. When the check is green, download the
-   `TABLY-unsigned-ipa` artifact and unzip it.
+1. **Actions** tab > "Build unsigned iOS IPA" > **Run workflow**. When the check is green, download the `TABLY-unsigned-ipa` artifact and unzip it.
+2. Optional: set a repository variable `API_URL` (Settings > Secrets and variables > Actions > Variables) as a fallback server address.
+   The app normally takes the address from Home > Server settings.
 
-The same steps work for `ci/tests.workflow.yml` (copy it to `.github/workflows/tests.yml`) to run all tests on every push.
+`.github/workflows/tests.yml` runs all tests on every push.
 
-Private repos get 2,000 free Actions minutes a month and macOS minutes count 10x, so expect roughly 8-13 builds a month.
+Editing workflow files needs a GitHub login with the `workflow` permission. Private repos get 2,000 free Actions minutes a month and macOS minutes count 10x.
 
 ## 4. Install with Sideloadly
 

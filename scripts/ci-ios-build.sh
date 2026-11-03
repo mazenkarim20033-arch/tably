@@ -11,6 +11,9 @@ fi
 xcodebuild -version
 swift --version
 
+# Compiled output lives outside the generated ios/ folder so the CI cache can keep it between builds.
+DERIVED="$HOME/tably-derived"
+
 npm ci
 
 cd apps/mobile
@@ -22,12 +25,12 @@ pod install
 # -quiet keeps the log readable: only warnings and errors are printed.
 xcodebuild -quiet \
   -workspace TABLY.xcworkspace -scheme TABLY -configuration Release \
-  -sdk iphoneos -derivedDataPath build \
+  -sdk iphoneos -derivedDataPath "$DERIVED" \
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
   build
 
 rm -rf Payload TABLY-unsigned.ipa
 mkdir -p Payload
-cp -R build/Build/Products/Release-iphoneos/TABLY.app Payload/
+cp -R "$DERIVED/Build/Products/Release-iphoneos/TABLY.app" Payload/
 zip -qr TABLY-unsigned.ipa Payload
 ls -lh TABLY-unsigned.ipa

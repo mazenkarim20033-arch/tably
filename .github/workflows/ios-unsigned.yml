@@ -14,6 +14,18 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm # reuse downloaded JavaScript packages between builds
+      - name: Cache CocoaPods and compiled iOS code
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cocoapods
+            ~/Library/Caches/CocoaPods
+            ~/tably-derived
+          # Changes when dependencies or app config change; otherwise the compiled code is reused.
+          key: ios-${{ runner.os }}-${{ hashFiles('package-lock.json', 'apps/mobile/app.json') }}
+          restore-keys: |
+            ios-${{ runner.os }}-
       - name: Build unsigned IPA
         run: bash scripts/ci-ios-build.sh
         env:
