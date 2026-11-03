@@ -1,0 +1,40 @@
+name: Build unsigned iOS IPA (for Sideloadly)
+
+# Produces an UNSIGNED .ipa. Sideloadly signs it on your PC with your free Apple ID.
+# Free Apple IDs: the app expires after 7 days and must be re-installed; max 3 sideloaded apps.
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    env:
+      # The backend the app talks to. Set it in GitHub: Settings > Secrets and variables > Actions > Variables > API_URL
+      EXPO_PUBLIC_API_URL: ${{ vars.API_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - name: Generate native iOS project
+        working-directory: apps/mobile
+        run: npx expo prebuild --platform ios --no-install
+      - name: Install pods
+        working-directory: apps/mobile/ios
+        run: pod install
+      - name: Build (no code signing)
+        working-directory: apps/mobile/ios
+        run: |
+          xcodebuild -workspace TABLY.xcworkspace -scheme TABLY -configuration Release \
+            -sdk iphoneos -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
+      - name: Package IPA
+        working-directory: apps/mobile/ios
+        run: |
+          mkdir -p Payload && cp -R build/Build/Products/Release-iphoneos/TABLY.app Payload/
+          zip -qr TABLY-unsigned.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TABLY-unsigned-ipa
+          path: apps/mobile/ios/TABLY-unsigned.ipa
