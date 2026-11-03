@@ -1,0 +1,7 @@
+node_modules
+dist
+.expo
+*.log
+.env
+.env.*
+uploads/

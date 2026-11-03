@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "TABLY",
+    "slug": "tably",
+    "scheme": "tably",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#6D5BF7"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "app.tably.mobile",
+      "infoPlist": {
+        "NSCameraUsageDescription": "TABLY uses the camera to scan receipts.",
+        "NSPhotoLibraryUsageDescription": "TABLY reads receipt photos you choose to scan.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": { "package": "app.tably.mobile" },
+    "web": { "favicon": "./assets/favicon.png" },
+    "plugins": ["expo-router"]
+  }
+}
