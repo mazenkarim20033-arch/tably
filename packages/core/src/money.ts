@@ -22,6 +22,17 @@ export function parseAmount(input: string): Minor | null {
   if (!/\d/.test(s)) return null;
   const negative = s.startsWith('-');
   const body = s.replace(/-/g, '');
+  // Only these shapes are amounts: 1250, 12.5, 1,250.00, 1.250,00. Irregular groups ("31.50831.50") are
+  // OCR garbage, and guessing would invent money.
+  if (!/^\d+$/.test(body) && !/^\d+[.,]\d{1,2}$/.test(body) && !/^\d{1,3}([.,]\d{3})+([.,]\d{1,2})?$/.test(body)) return null;
+  const separators = body.match(/[.,]/g) ?? [];
+  if (separators.length >= 2) {
+    const lastMark = separators[separators.length - 1]!;
+    const lastGroup = body.slice(body.lastIndexOf(lastMark) + 1);
+    const grouping = lastGroup.length === 3 ? separators : separators.slice(0, -1); // 3 digits: a thousands group
+    if (new Set(grouping).size > 1) return null; // the grouping mark must be one consistent character
+    if (lastGroup.length <= 2 && lastMark === separators[0]) return null; // decimal mark cannot equal grouping mark
+  }
   const lastDot = body.lastIndexOf('.');
   const lastComma = body.lastIndexOf(',');
   const sepIdx = Math.max(lastDot, lastComma);

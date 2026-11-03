@@ -157,12 +157,14 @@ describe('stray rows', () => {
     expect(r.uncertain).toContain(`items.${mystery.id}.lineTotal`);
     expect(r.items.filter((i) => i.flags.includes('does-not-add-up'))).toHaveLength(1);
   });
-  it('does not guess when more than one fix is possible', () => {
+  it('does not guess when more than one explanation fits', () => {
+    // Removing A and B fits, but so does reading C as 30.00: two explanations, so neither is offered.
     const r = parseReceipt(ocr(['CAFE X', 'A|10.00', 'B|10.00', 'C|50.00', 'Subtotal|50.00', 'Total|50.00']));
-    // removing A+B or removing... C alone does not fit; A and B together do, but also nothing else: unique, so flagged
-    expect(r.items.some((i) => i.flags.includes('does-not-add-up'))).toBe(true);
+    expect(r.items.some((i) => i.flags.includes('does-not-add-up') || i.flags.includes('maybe-misread'))).toBe(false);
+    expect(r.notes.join(' ')).toMatch(/more than one price/);
+    // Removing any one of A, B or C fits: ambiguous.
     const r2 = parseReceipt(ocr(['CAFE X', 'A|10.00', 'B|10.00', 'C|10.00', 'Subtotal|20.00', 'Total|20.00']));
-    expect(r2.items.some((i) => i.flags.includes('does-not-add-up'))).toBe(false); // A, B or C: ambiguous
+    expect(r2.items.some((i) => i.flags.includes('does-not-add-up'))).toBe(false);
   });
   it('leaves receipts that already add up alone', () => {
     const r = parseReceipt(ocr(['CAFE X', 'Latte|60.00', 'Cake|40.00', 'Subtotal|100.00', 'Total|100.00']));

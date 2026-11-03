@@ -47,3 +47,19 @@ describe('formatAmount', () => {
     expect(formatAmount(12550)).toBe('125.50 EGP');
   });
 });
+
+describe('parseAmount rejects OCR garbage instead of guessing', () => {
+  it('rejects irregular digit groups', () => {
+    for (const bad of ['31.50831.50', '1.2.3', '12,34,56', '1,2345.00', '7..50', '3.150.83']) {
+      expect(parseAmount(bad)).toBeNull();
+    }
+  });
+  it('still reads every valid shape', () => {
+    expect(parseAmount('1,735.00')).toBe(173500);
+    expect(parseAmount('1.735,00')).toBe(173500);
+    expect(parseAmount('2,215.25')).toBe(221525);
+    expect(parseAmount('1,000,000.5')).toBe(100000050);
+    expect(parseAmount('75')).toBe(7500);
+    expect(parseAmount('0.00')).toBe(0);
+  });
+});

@@ -9,6 +9,8 @@ struct OcrLineRecord: Record {
   @Field var w: Double = 0
   @Field var h: Double = 0
   @Field var confidence: Double = 0
+  // Runner-up readings of the same text (Vision can read 60.00 as 80.00); the parser uses them to explain mismatches.
+  @Field var alternates: [String] = []
 }
 
 private struct Pass {
@@ -55,10 +57,12 @@ public class TablyVisionModule: Module {
     var lines: [OcrLineRecord] = []
     var score = 0.0
     for obs in (request.results ?? []) {
-      guard let top = obs.topCandidates(1).first else { continue }
+      let candidates = obs.topCandidates(3)
+      guard let top = candidates.first else { continue }
       let box = obs.boundingBox // normalized, origin bottom-left
       var r = OcrLineRecord()
       r.text = top.string
+      r.alternates = candidates.dropFirst().map { $0.string }.filter { $0 != top.string }
       r.x = Double(box.minX)
       r.y = Double(1.0 - box.maxY) // convert to top-left origin
       r.w = Double(box.width)

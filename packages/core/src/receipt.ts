@@ -9,6 +9,8 @@ export interface OcrLine {
   h: number;
   /** 0..1 recognizer confidence */
   confidence: number;
+  /** Runner-up readings of the same text from the recognizer, best first (it can misread 60.00 as 80.00). */
+  alternates?: string[];
 }
 
 export type ItemFlag =
@@ -17,7 +19,9 @@ export type ItemFlag =
   | 'quantity-inferred'
   | 'unit-price-unknown'
   /** Removing this row makes the items add up to the printed subtotal: it may not be an item. */
-  | 'does-not-add-up';
+  | 'does-not-add-up'
+  /** Changing one digit of this price (see suggestedLineTotal) makes the items match the printed subtotal. */
+  | 'maybe-misread';
 
 export interface ReceiptItem {
   id: string;
@@ -29,6 +33,10 @@ export interface ReceiptItem {
   lineTotal: Minor | null;
   confidence: number;
   flags: ItemFlag[];
+  /** A one-tap correction the person can accept; never applied automatically. */
+  suggestedLineTotal?: Minor;
+  /** Other prices the recognizer thought this line could be (used to explain an arithmetic mismatch). */
+  altLineTotals?: Minor[];
 }
 
 /** Dotted paths the user should double-check, e.g. "merchant", "total", "items.i3.lineTotal". */
