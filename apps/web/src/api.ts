@@ -53,7 +53,11 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const getBill = (token: string) => call<BillView>(`/api/s/${encodeURIComponent(token)}`);
 
-export const join = (token: string, name: string) =>
+/** One cheap query: has anything on this bill changed since the version I last saw? */
+export const getVersion = (token: string) =>
+  call<{ version: number; status: string }>(`/api/s/${encodeURIComponent(token)}/version`);
+
+export const join =(token: string, name: string) =>
   call<{ participant_id: string; participant_token: string; name: string }>(
     `/api/s/${encodeURIComponent(token)}/participants`,
     { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) },

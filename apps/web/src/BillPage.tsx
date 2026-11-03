@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { formatAmount } from '@tably/core';
 import { PayPanel, STATUS_LABEL, statusOf } from "./PayPanel";
-import { ApiError, getBill, join, setClaim, type BillItem, type BillView, type ClaimChange, type Me } from './api';
+import { ApiError, getBill, getVersion, join, setClaim, type BillItem, type BillView, type ClaimChange, type Me } from './api';
 
-const POLL_MS = 3000;
+const POLL_MS = 4000;
+const POLL_SLOW_MS = 15000;
 
 /** What the item rows should look like right after my tap, before the server confirms. Totals wait for the server. */
 function withClaim(b: BillView, meId: string, itemId: string, c: ClaimChange): BillView {
@@ -53,30 +54,38 @@ export function BillPage({ token }: { token: string }) {
     }
   }, [token]);
 
-  // Live updates: the server announces changes over SSE and we refetch. Polling stays as a safety net
-  // (fast while the stream is down, slow while it is up).
+  // Live updates by polling a one-query version check; the full bill is fetched only when the version moves. The
+  // check slows down while nothing changes and pauses while the tab is hidden, to stay inside the free request allowance.
   useEffect(() => {
     void refresh();
-    let live = false;
-    let es: EventSource | null = null;
-    if (typeof EventSource !== 'undefined') {
-      es = new EventSource(`/api/s/${encodeURIComponent(token)}/events`);
-      es.addEventListener('ready', () => { live = true; });
-      es.addEventListener('changed', () => { void refresh(); });
-      es.addEventListener('gone', () => { live = false; void refresh(); });
-      es.onerror = () => { live = false; }; // the browser reconnects by itself
-    }
-    let n = 0;
-    const id = setInterval(() => {
-      n += 1;
+    let seen = -1;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let quietSince = Date.now();
+    const tick = async () => {
+      if (stopped) return;
+      if (!document.hidden && busy.current === 0) {
+        try {
+          const v = await getVersion(token);
+          if (seen !== -1 && v.version !== seen) { quietSince = Date.now(); await refresh(); }
+          seen = v.version;
+        } catch (e) {
+          if (e instanceof ApiError && [403, 404, 410].includes(e.status)) setFatal({ status: e.status, message: e.message });
+        }
+      }
+      const quiet = Date.now() - quietSince;
+      timer = setTimeout(() => void tick(), quiet > 120_000 ? POLL_SLOW_MS : POLL_MS);
+    };
+    timer = setTimeout(() => void tick(), POLL_MS);
+    const onVisible = () => {
       if (document.hidden) return;
-      if (!live || n % 7 === 0) void refresh();
-    }, POLL_MS);
-    const onVisible = () => { if (!document.hidden) void refresh(); };
+      quietSince = Date.now();
+      void refresh();
+    };
     document.addEventListener('visibilitychange', onVisible);
     return () => {
-      clearInterval(id);
-      es?.close();
+      stopped = true;
+      clearTimeout(timer);
       document.removeEventListener('visibilitychange', onVisible);
     };
   }, [refresh, token]);

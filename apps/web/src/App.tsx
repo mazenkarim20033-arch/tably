@@ -1,7 +1,7 @@
 import { BillPage } from './BillPage';
 
 export function App() {
-  const m = window.location.pathname.match(/^\/s\/([\w-]+)\/?$/);
+  const m = window.location.pathname.match(/^\/(?:s|bill)\/([\w-]+)\/?$/);
   if (m?.[1]) return <BillPage token={m[1]} />;
   return (
     <main className="page center">
