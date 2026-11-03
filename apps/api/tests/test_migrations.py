@@ -16,6 +16,10 @@ def test_migrations_build_exactly_the_model_schema(tmp_path, monkeypatch):
     """`alembic upgrade head` on an empty database must produce the same schema the models describe."""
     url = f"sqlite:///{tmp_path / 'mig.db'}"
     monkeypatch.setenv("TABLY_DATABASE_URL", url)
+    # Migrations prefer a direct URL when one is set (Neon). Point every variant at the temporary database.
+    monkeypatch.setenv("TABLY_MIGRATION_DATABASE_URL", url)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("DATABASE_URL_UNPOOLED", raising=False)
     from tably_api.config import get_settings
 
     get_settings.cache_clear()
