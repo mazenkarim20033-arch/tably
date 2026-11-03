@@ -347,6 +347,63 @@ function attachOrphans(rows: Row[], from: number, slope: number): Row[] {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+// Summary boxes: the value printed under its label
+// ---------------------------------------------------------------------------------------------------------------
+
+/**
+ * Some receipts print a box of figures as columns: the label on one line ("Tax"), its value on the line below
+ * ("137.90"). A money label with no amount beside it takes the amount-only fragment directly under it; the two become
+ * one fragment ("Tax 137.90") that reads like any other total row.
+ */
+export function joinValuesUnderLabels(lines: OcrLine[]): OcrLine[] {
+  const gone = new Set<number>();
+  const joined = new Map<number, OcrLine>();
+  const rank = new Map<number, number>(); // pairs that share a printed row must not merge into one row
+  const labelsOnRow: number[] = [];
+  lines.forEach((lab, i) => {
+    if (!MONEY_LABELS.includes(classify(lab.text)) || splitAmounts(lab.text).raw.length > 0) return;
+    const beside = lines.some(
+      (o, j) => j !== i && isAmountOnly(o.text) && Math.abs(cyOf(o) - cyOf(lab)) < 0.6 * Math.max(o.h, lab.h) && cxOf(o) > cxOf(lab),
+    );
+    if (beside) return;
+    // "Total" in a column header (Item, Qty, price, Total) labels a column, not the amount under it.
+    const inHeader = lines.filter((o, j) => j !== i && isHeaderish(o.text) && Math.abs(cyOf(o) - cyOf(lab)) < 0.6 * Math.max(o.h, lab.h)).length >= 2;
+    if (inHeader) return;
+    let best = -1;
+    let bestD = Infinity;
+    lines.forEach((v, j) => {
+      if (gone.has(j) || !isAmountOnly(v.text)) return;
+      const dy = cyOf(v) - cyOf(lab);
+      if (dy < 0.8 * lab.h || dy > 3.2 * Math.max(lab.h, v.h)) return;
+      const dx = Math.abs(cxOf(v) - cxOf(lab));
+      if (dx > Math.max(0.1, lab.w)) return;
+      if (dy + dx * 3 < bestD) {
+        bestD = dy + dx * 3;
+        best = j;
+      }
+    });
+    if (best < 0) return;
+    gone.add(best);
+    labelsOnRow.push(i);
+    joined.set(i, { ...lab, text: `${lab.text.trim()}  ${lines[best]!.text.trim()}`, w: lab.w + lines[best]!.w, alternates: undefined });
+  });
+  // Pairs whose labels sit on the same printed row get their own rows: stacked just below one another.
+  labelsOnRow.sort((a, b) => cyOf(lines[a]!) - cyOf(lines[b]!) || lines[a]!.x - lines[b]!.x);
+  labelsOnRow.forEach((i, n) => {
+    const same = labelsOnRow.slice(0, n).filter((k) => Math.abs(cyOf(lines[k]!) - cyOf(lines[i]!)) < 0.6 * lines[i]!.h).length;
+    rank.set(i, same);
+  });
+  return lines.flatMap((l, i) => {
+    if (gone.has(i)) return [];
+    const j = joined.get(i);
+    if (!j) return [l];
+    const { alternates: _drop, ...rest } = j;
+    void _drop;
+    return [{ ...rest, y: l.y + (rank.get(i) ?? 0) * l.h * 1.4 }];
+  });
+}
+
+// ---------------------------------------------------------------------------------------------------------------
 // Pairing by order (independent of page tilt)
 // ---------------------------------------------------------------------------------------------------------------
 
@@ -401,8 +458,17 @@ export function straightenByOrder(lines: OcrLine[]): OcrLine[] | null {
 
   // Prices: separate fragments holding only an amount, in the price column below the header.
   const amounts = lines.filter((l) => cyOf(l) > priceTop && isAmountOnly(l.text) && !names.includes(l));
-  const column = median(amounts.map(cxOf));
-  const inColumn = amounts.filter((l) => Math.abs(cxOf(l) - column) < 0.15).sort((a, b) => cyOf(a) - cyOf(b));
+  // Several amount columns (unit price, then line total): the rightmost one that has a value for every row.
+  const byX = [...amounts].sort((a, b) => cxOf(a) - cxOf(b));
+  const clusters: OcrLine[][] = [];
+  for (const a of byX) {
+    const c = clusters[clusters.length - 1];
+    if (c && cxOf(a) - cxOf(c[c.length - 1]!) < 0.05) c.push(a);
+    else clusters.push([a]);
+  }
+  const wanted = Math.max(needPrice.length, 1);
+  const chosen = [...clusters].reverse().find((c) => c.length >= wanted) ?? [];
+  const inColumn = chosen.sort((a, b) => cyOf(a) - cyOf(b));
   if (inColumn.length < needPrice.length) return null;
   const prices = inColumn.slice(0, needPrice.length);
   const rest = inColumn.slice(needPrice.length);
@@ -526,6 +592,7 @@ function detectMerchant(rows: Row[], limit: number): Row | null {
   const candidates = top.filter((r) => {
     const t = r.text.trim();
     const letters = (t.match(/[A-Za-z؀-ۿ]/g) ?? []).length;
+    if (r.confidence < 0.5) return false; // scanner noise
     if (letters < 3 || letters < t.replace(/\s/g, '').length * 0.5) return false; // mostly letters
     if (splitAmounts(t).raw.length > 0 || /\d{4,}/.test(normalizeDigits(t))) return false;
     if (classify(t) !== 'item' || NOT_A_STORE.test(normalizeArabic(t))) return false;
@@ -566,17 +633,24 @@ export function parseWithSlope(clean: OcrLine[], slope: number): { receipt: Rece
   const priceLike = (text: string) => (decimalStyle ? hasDecimalAmount(text) : splitAmounts(text).raw.length > 0);
 
   // Where the item table starts: after its column header, else at the first priced row.
-  const firstPriced = rows.findIndex((r) => {
+  const pricedRow = (r: Row) => {
     const k = classify(r.text);
     return (k === 'item' || k === 'subtotal' || k === 'total') && priceLike(r.text) && !NON_ITEM.some((re) => re.test(r.text));
-  });
+  };
+  // A column header that is followed by priced rows is where the table starts, even when a summary box with amounts
+  // (minimum charge, tax, service) is printed above it.
+  const tableHeader = rows.findIndex((r, i) => isHeaderRow(r.text) && !/\d/.test(r.text) && rows.slice(i + 1, i + 4).some(pricedRow));
+  let firstPriced = tableHeader >= 0 ? rows.findIndex((r, i) => i > tableHeader && pricedRow(r)) : rows.findIndex(pricedRow);
   let headerIdx = -1;
-  rows.forEach((r, i) => {
-    if (firstPriced >= 0 && i >= firstPriced) return;
-    const strong = isHeaderRow(r.text);
-    const lone = isHeaderish(r.text) && i >= firstPriced - 6 && firstPriced >= 0;
-    if (strong || lone) headerIdx = i;
-  });
+  if (tableHeader >= 0) headerIdx = tableHeader;
+  else {
+    rows.forEach((r, i) => {
+      if (firstPriced >= 0 && i >= firstPriced) return;
+      const strong = isHeaderRow(r.text);
+      const lone = isHeaderish(r.text) && i >= firstPriced - 6 && firstPriced >= 0;
+      if (strong || lone) headerIdx = i;
+    });
+  }
   const headerText = rows.slice(Math.max(0, headerIdx - 3), headerIdx + 1).map((r) => r.text).join(' ');
   const qtyColumn = headerIdx >= 0 && QTY_HEADER.test(normalizeArabic(headerText));
   const from = headerIdx >= 0 ? headerIdx + 1 : Math.max(0, firstPriced - 1);
@@ -611,7 +685,20 @@ export function parseWithSlope(clean: OcrLine[], slope: number): { receipt: Rece
     notes.push(`No currency printed; assumed ${currency.code}.`);
   }
 
-  const merchantRow = detectMerchant(rows, headerIdx >= 0 ? headerIdx : Math.max(firstPriced, 0));
+  let merchantRow = detectMerchant(rows, headerIdx >= 0 ? headerIdx : Math.max(firstPriced, 0));
+  if (!merchantRow) {
+    // Some receipts print the shop's name under the table instead of above it.
+    let lastPriced = -1;
+    rows.forEach((r, i) => {
+      if (i >= tableStart && classes[i] === 'item' && priceLike(r.text)) lastPriced = i;
+    });
+    const below = rows.slice(lastPriced + 1, lastPriced + 4);
+    merchantRow = below.find((r) => {
+      const t = r.text.trim();
+      return r.confidence >= 0.8 && /^[A-Za-z][A-Za-z' &.-]{2,28}$/.test(t) && t.split(/\s+/).length <= 4 &&
+        classify(t) === 'item' && !NOT_A_STORE.test(t);
+    }) ?? null;
+  }
   const merchant = merchantRow ? merchantRow.text.replace(/\s{2,}/g, ' ').trim() : null;
   if (!merchant) {
     uncertain.push('merchant');
@@ -619,6 +706,8 @@ export function parseWithSlope(clean: OcrLine[], slope: number): { receipt: Rece
   } else if (merchantRow!.confidence < 0.6) uncertain.push('merchant');
 
   let lastWasItem = false;
+  let lastItemY = 0;
+  let lastItemH = 0;
   rows.forEach((row, order) => {
     const kind = classes[order]!;
     const inTable = order >= tableStart && order < tableEnd;
@@ -651,7 +740,8 @@ export function parseWithSlope(clean: OcrLine[], slope: number): { receipt: Rece
       const t = row.text.trim();
       const prev = items[items.length - 1];
       // A second-language caption or a wrapped description: no digits, directly after an item.
-      if (lastWasItem && prev && /^[^\d]+$/.test(t) && t.length < 60 && LETTER.test(t)) {
+      const close = row.yc - lastItemY < 2.6 * Math.max(row.h, lastItemH);
+      if (lastWasItem && close && prev && /^[^\d]+$/.test(t) && t.length < 60 && LETTER.test(t)) {
         prev.description = `${prev.description} ${t}`;
         return;
       }
@@ -748,6 +838,8 @@ export function parseWithSlope(clean: OcrLine[], slope: number): { receipt: Rece
       uncertain.push(`items.${id}.${field}`);
     }
     lastWasItem = true;
+    lastItemY = row.yc;
+    lastItemH = row.h;
   });
 
   // Lines printed at 0.00 (an included cup, free bread) cannot be split between people. Say so, do not list them.
@@ -928,7 +1020,7 @@ export function candidateSlopes(lines: OcrLine[]): number[] {
 
 /** Turn OCR lines into a draft receipt. See the notes at the top of this file for the pipeline. */
 export function parseReceipt(lines: OcrLine[]): Receipt {
-  const clean = lines.filter((l) => l.text.trim().length > 0);
+  const clean = joinValuesUnderLabels(lines.filter((l) => l.text.trim().length > 0));
   let best: { receipt: Receipt; score: number } | null = null;
   // Pairing by order first: when its counts line up it is the most reliable reading, so it also gets a head start
   // that only a tilt-based reading with exact arithmetic can overcome.
