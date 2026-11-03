@@ -3,7 +3,7 @@ import { Alert, Image, Pressable, ScrollView, Share, Switch, Text, View } from '
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import {
-  addItem, formatAmount, reconcile, removeItem, setField, setItemDescription, setItemLineTotal,
+  addItem, encodeOcrDump, formatAmount, reconcile, removeItem, setField, setItemDescription, setItemLineTotal,
   setItemQuantity, setTaxIncluded, type HeaderField, type Receipt,
 } from '@tably/core';
 import { Button } from '../components/Button';
@@ -116,9 +116,7 @@ export default function Review() {
             onPress={() =>
               // Only when the person taps it: the raw text the scanner read, to report a bad reading.
               void Share.share({
-                message: JSON.stringify(
-                  draft.ocr.map((l) => ({ t: l.text, x: +l.x.toFixed(3), y: +l.y.toFixed(3), h: +l.h.toFixed(3), c: +l.confidence.toFixed(2) })),
-                ),
+                message: encodeOcrDump({ lines: draft.ocr, width: draft.ocrSize?.width ?? 0, height: draft.ocrSize?.height ?? 0 }),
               })
             }
             style={{ color: colors.textFaint, fontSize: 13, textDecorationLine: 'underline' }}

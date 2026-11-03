@@ -13,3 +13,4 @@ __pycache__/
 .neon
 
 .wrangler/
+packages/core/eval/report.json

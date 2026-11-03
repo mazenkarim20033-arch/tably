@@ -1,0 +1,64 @@
+{
+  "id": "takeaway-egypt",
+  "source": "typed",
+  "split": "dev",
+  "reviewed": true,
+  "description": "Real Egyptian receipt typed row by row. Qty/Description/Price/Total table, no total line, no store name.",
+  "tags": [
+    "real-text",
+    "egypt",
+    "unit-columns",
+    "no-total"
+  ],
+  "input": {
+    "kind": "rows",
+    "layout": "grid",
+    "rows": [
+      "27066|2",
+      "TakeAway",
+      "1",
+      "Cash",
+      "Shift: Morning",
+      "Date: 15/11/2020|Time:05:25:09 a",
+      "Casheir :User",
+      "Qty|Description|Price|Total",
+      "1.0|Ballston roll|69.00|69.00",
+      "1.0|Fire roll 5 Pieces|50.00|50.00",
+      "1.0|Crispy Oboro 4 Pieces|49.00|49.00",
+      "1.0|Spicy Pinky 4 pieces|49.00|49.00",
+      "Sub Total|217.00",
+      "Tax|0.00",
+      "DISC.|0.00"
+    ]
+  },
+  "truth": {
+    "items": [
+      {
+        "name": "Ballston roll",
+        "qty": 1,
+        "lineTotal": 6900
+      },
+      {
+        "name": "Fire roll 5 Pieces",
+        "qty": 1,
+        "lineTotal": 5000
+      },
+      {
+        "name": "Crispy Oboro 4 Pieces",
+        "qty": 1,
+        "lineTotal": 4900
+      },
+      {
+        "name": "Spicy Pinky 4 pieces",
+        "qty": 1,
+        "lineTotal": 4900
+      }
+    ],
+    "subtotal": 21700,
+    "tax": null,
+    "service": null,
+    "tip": null,
+    "discount": null,
+    "total": null
+  }
+}

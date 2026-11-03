@@ -1,0 +1,68 @@
+{
+  "id": "popeyes-lake-geneva",
+  "source": "typed",
+  "split": "dev",
+  "reviewed": true,
+  "description": "Real US receipt typed row by row. ZIP code, phone, guest count, month-first date.",
+  "tags": [
+    "real-text",
+    "us",
+    "qty-prefix"
+  ],
+  "input": {
+    "kind": "rows",
+    "layout": "two-column",
+    "rows": [
+      "POPEYES",
+      "811 WRIGLEY DRIVE",
+      "LAKE GENEVA, WI 53147",
+      "262-248-4381",
+      "WWW.POPEYESLKG.COM",
+      "1488 1488Kale",
+      "Tbl 52/1  Chk 5453  Gst 2",
+      "Jun25'21 07:21PM",
+      "1 SANGRIA|11.99",
+      "1 TITO VODKA|8.99",
+      "1 CRAB LEG 1.5LB|200.00",
+      "1 PORK BBQ SAND|15.99",
+      "Subtotal|236.97",
+      "Tax Total|13.03",
+      "08:01PM Total Due|250.00",
+      "THANK YOU FOR JOINING US",
+      "PLEASE PAY YOUR SERVER",
+      "WWW.POPEYESLKG.COM",
+      "SIGN UP FOR OUR VIP LIST",
+      "FRI:06/25/21 19:21:31"
+    ]
+  },
+  "truth": {
+    "items": [
+      {
+        "name": "SANGRIA",
+        "qty": 1,
+        "lineTotal": 1199
+      },
+      {
+        "name": "TITO VODKA",
+        "qty": 1,
+        "lineTotal": 899
+      },
+      {
+        "name": "CRAB LEG 1.5LB",
+        "qty": 1,
+        "lineTotal": 20000
+      },
+      {
+        "name": "PORK BBQ SAND",
+        "qty": 1,
+        "lineTotal": 1599
+      }
+    ],
+    "subtotal": 23697,
+    "tax": 1303,
+    "service": null,
+    "tip": null,
+    "discount": null,
+    "total": 25000
+  }
+}

@@ -70,7 +70,7 @@ const SWAP: Record<string, string> = { '0': '8', '8': '6', '6': '8', '1': '7', '
 
 /** One digit of a printed price read wrongly, the way OCR does. */
 function misread(text: string, r: () => number): string {
-  const at = [...text].map((c, i) => (/d/.test(c) ? i : -1)).filter((i) => i >= 0);
+  const at = [...text].map((c, i) => (/\d/.test(c) ? i : -1)).filter((i) => i >= 0);
   const i = at[Math.floor(r() * at.length)]!;
   return text.slice(0, i) + (SWAP[text[i]!] ?? '8') + text.slice(i + 1);
 }

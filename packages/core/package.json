@@ -6,7 +6,10 @@
   "types": "src/index.ts",
   "scripts": {
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "eval": "vite-node eval/run.ts",
+    "eval:import": "vite-node eval/import.ts",
+    "eval:inspect": "vite-node eval/inspect.ts"
   },
   "devDependencies": {
     "typescript": "~5.6.0",

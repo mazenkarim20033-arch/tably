@@ -11,6 +11,28 @@ export interface OcrLine {
   confidence: number;
   /** Runner-up readings of the same text from the recognizer, best first (it can misread 60.00 as 80.00). */
   alternates?: string[];
+  /** Recognizer confidence of each runner-up, same order as `alternates`. */
+  alternateConfidences?: number[];
+  /** True corners of the text: top-left, top-right, bottom-right, bottom-left as x,y pairs (8 numbers). */
+  quad?: number[];
+  /** Each whitespace-separated word with its own box. */
+  words?: OcrWord[];
+}
+
+export interface OcrWord {
+  text: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** Everything the scanner returned for one photo. */
+export interface OcrResult {
+  lines: OcrLine[];
+  /** Pixel size of the recognized (upright) image; 0 when unknown. */
+  width: number;
+  height: number;
 }
 
 export type ItemFlag =

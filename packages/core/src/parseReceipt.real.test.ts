@@ -21,7 +21,7 @@ function fromPixels(frags: F[], textPx = 15, tilt = 0.06): OcrLine[] {
 }
 
 // Coordinates are pixels inside the photo (0..625 x 0..953).
-const TABLE9_PHOTO: F[] = [
+export const TABLE9_PHOTO: F[] = [
   ['TABLE 9', 115, 240, 34],
   ['INV#- 215156', 70, 200, 60],
   ['رقم الفاتورة', 210, 290, 54],

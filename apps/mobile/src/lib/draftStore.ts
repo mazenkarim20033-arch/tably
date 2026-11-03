@@ -11,6 +11,8 @@ export interface Draft {
   receipt: Receipt;
   /** Raw OCR lines, kept so the parser can be re-run after improvements. */
   ocr: OcrLine[];
+  /** Pixel size of the recognized image, so the dump can be read at the right aspect ratio. */
+  ocrSize?: { width: number; height: number };
   ocrError: string | null;
   /** set when editing an existing bill instead of creating a new one */
   editBillId?: string;

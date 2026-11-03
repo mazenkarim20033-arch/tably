@@ -20,8 +20,8 @@ export default function Scan() {
     try {
       await startDraft(uri);
       try {
-        const lines = await recognizeText(uri);
-        updateDraft({ ocr: lines, receipt: parseReceipt(lines) });
+        const result = await recognizeText(uri);
+        updateDraft({ ocr: result.lines, ocrSize: { width: result.width, height: result.height }, receipt: parseReceipt(result.lines) });
       } catch (e) {
         // Keep the photo and let the user type the receipt in; never fake a result.
         updateDraft({ ocrError: e instanceof Error ? e.message : 'Text recognition failed.' });

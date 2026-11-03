@@ -868,9 +868,13 @@ export function parseWithSlope(clean: OcrLine[], slope: number): { receipt: Rece
   let arith: 'exact' | 'repaired' | 'unknown' | 'broken' = targets.length === 0 ? 'unknown' : targets.includes(sumOf()) ? 'exact' : 'broken';
 
   if (targets.length > 0 && !targets.includes(sumOf())) {
-    // (a) Per-unit prices: "2 x 15.00" printed without the line total. Exact arithmetic proves it.
+    // (a) Per-unit prices: "2 x 15.00" printed without the line total. Exact arithmetic proves it, unless a single
+    // misread digit would explain the gap just as well: then neither is applied and the mismatch stays visible.
     const perUnit = items.reduce((s, i) => s + (i.lineTotal ?? 0) * i.quantity, 0);
-    if (items.some((i) => i.quantity > 1) && targets.includes(perUnit)) {
+    const perUnitFits = items.some((i) => i.quantity > 1) && targets.includes(perUnit);
+    if (perUnitFits && findMisreads(items, targets).length > 0) {
+      notes.push('The items do not add up to the subtotal and more than one explanation fits (per-unit prices, or a misread price). Check them against the receipt.');
+    } else if (perUnitFits) {
       for (const i of items) {
         if (i.quantity > 1 && i.lineTotal !== null) {
           i.unitPrice = i.lineTotal;
