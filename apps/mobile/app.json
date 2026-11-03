@@ -21,8 +21,15 @@
         "ITSAppUsesNonExemptEncryption": false
       }
     },
-    "android": { "package": "app.tably.mobile" },
-    "web": { "favicon": "./assets/favicon.png" },
-    "plugins": ["expo-router"]
+    "android": {
+      "package": "app.tably.mobile"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store"
+    ]
   }
 }

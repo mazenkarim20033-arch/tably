@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Image, Pressable, ScrollView, Switch, Text, View } from 'react-native';
+import { Alert, Image, Pressable, ScrollView, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import {
@@ -10,11 +10,41 @@ import { Button } from '../components/Button';
 import { AmountField, TextField } from '../components/Fields';
 import { useTheme } from '../theme/ThemeProvider';
 import { updateDraft, useDraft } from '../lib/draftStore';
+import { createBill, MismatchError, uploadImage } from '../lib/billsApi';
+import { saveBill } from '../lib/myBills';
 
 export default function Review() {
   const { colors, space, radius } = useTheme();
   const draft = useDraft();
   const [showImage, setShowImage] = useState(false);
+  const [creating, setCreating] = useState(false);
+
+  async function create(acceptMismatch = false) {
+    if (!draft) return;
+    setCreating(true);
+    try {
+      const made = await createBill(draft.receipt, acceptMismatch);
+      if (draft.imageUri) void uploadImage(made.id, made.admin_token, draft.imageUri);
+      const rec = reconcile(draft.receipt);
+      await saveBill(
+        { id: made.id, store: draft.receipt.merchant?.trim() || 'Receipt', currency: draft.receipt.currency,
+          total: rec.computedTotal, shareToken: made.share_token, createdAt: new Date().toISOString() },
+        made.admin_token,
+      );
+      router.replace({ pathname: '/share', params: { id: made.id } });
+    } catch (e) {
+      setCreating(false);
+      if (e instanceof MismatchError) {
+        Alert.alert(
+          'Totals do not match',
+          `Your items add up to ${formatAmount(e.computed, draft.receipt.currency)} but the receipt total is ${formatAmount(e.printed, draft.receipt.currency)}. Friends will be asked to split ${formatAmount(e.computed, draft.receipt.currency)}.`,
+          [{ text: 'Go back and fix', style: 'cancel' }, { text: 'Use item total', onPress: () => void create(true) }],
+        );
+      } else {
+        Alert.alert('Could not create the bill', e instanceof Error ? e.message : 'Please try again.');
+      }
+    }
+  }
   if (!draft) {
     router.replace('/');
     return null;
@@ -103,8 +133,8 @@ export default function Review() {
       </ScrollView>
 
       <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: space.lg, backgroundColor: colors.bg, borderTopColor: colors.border, borderTopWidth: 1, gap: space.sm }}>
-        <Button label="Looks right · create bill" onPress={() => router.push('/bills')} disabled={r.items.length === 0 || rec.status === 'incomplete'} />
-        <Text style={{ color: colors.textFaint, fontSize: 12, textAlign: 'center' }}>Bill creation and sharing arrive in Phase 3. Your edits are saved on this phone.</Text>
+        <Button label={creating ? 'Creating…' : 'Looks right · create bill'} onPress={() => void create()} disabled={creating || r.items.length === 0 || rec.status === 'incomplete'} />
+        <Text style={{ color: colors.textFaint, fontSize: 12, textAlign: 'center' }}>You will get a private link to share. Your edits are saved on this phone.</Text>
       </View>
     </SafeAreaView>
   );
