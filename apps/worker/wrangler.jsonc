@@ -19,7 +19,7 @@
     {
       "binding": "DB",
       "database_name": "tably",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "0a8db0e3-cfc5-4cfc-a64b-e1cf56abe5a4",
       "migrations_dir": "migrations"
     }
   ],

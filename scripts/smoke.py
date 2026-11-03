@@ -13,7 +13,8 @@ import urllib.request
 def call(base, method, path, body=None, headers=None):
     req = urllib.request.Request(
         base + path, method=method, data=None if body is None else json.dumps(body).encode(),
-        headers={"Content-Type": "application/json", **(headers or {})},
+        # Cloudflare's edge rejects Python's default User-Agent, so identify the script.
+        headers={"Content-Type": "application/json", "User-Agent": "tably-smoke/1.0", **(headers or {})},
     )
     try:
         with urllib.request.urlopen(req, timeout=60) as r:
