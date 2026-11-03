@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Alert, Image, Pressable, ScrollView, Switch, Text, View } from 'react-native';
+import { Alert, Image, Pressable, ScrollView, Share, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import {
@@ -111,8 +111,27 @@ export default function Review() {
         <View style={{ borderLeftWidth: 3, borderLeftColor: banner.c, paddingLeft: 12 }}>
           <Text style={{ color: banner.c, fontWeight: '600' }}>{banner.t}</Text>
         </View>
+        {draft.ocr.length > 0 && (
+          <Text
+            accessibilityRole="button"
+            onPress={() =>
+              // Only when the person taps it: the raw text the scanner read, to report a bad reading.
+              void Share.share({
+                message: JSON.stringify(
+                  draft.ocr.map((l) => ({ t: l.text, x: +l.x.toFixed(3), y: +l.y.toFixed(3), h: +l.h.toFixed(3), c: +l.confidence.toFixed(2) })),
+                ),
+              })
+            }
+            style={{ color: colors.textFaint, fontSize: 13, textDecorationLine: 'underline' }}
+          >
+            Share what the scanner read (helps fix wrong readings)
+          </Text>
+        )}
+        {(r.notes ?? []).map((n) => (
+          <Text key={n} style={{ color: colors.textMuted, fontSize: 14 }}>• {n}</Text>
+        ))}
         {r.uncertain.length > 0 && (
-          <Text style={{ color: colors.textMuted, fontSize: 14 }}>Fields outlined in amber were hard to read. Edit or tap into one to confirm it.</Text>
+          <Text style={{ color: colors.textMuted, fontSize: 14 }}>Fields outlined in amber were hard to read or were calculated. Edit or tap into one to confirm it.</Text>
         )}
 
         <TextField label="Store" value={r.merchant ?? ''} uncertain={flagged('merchant')} onChange={(v) => edit(setField(r, 'merchant', v))} placeholder="Restaurant name" />
@@ -179,7 +198,17 @@ export default function Review() {
       </ScrollView>
 
       <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: space.lg, backgroundColor: colors.bg, borderTopColor: colors.border, borderTopWidth: 1, gap: space.sm }}>
-        <Button label={creating ? 'Saving…' : draft.editBillId ? 'Save changes' : 'Looks right · create bill'} onPress={() => void create()} disabled={creating || r.items.length === 0 || rec.status === 'incomplete'} />
+        <Button label={creating ? 'Saving…' : draft.editBillId ? 'Save changes' : 'Looks right · create bill'} onPress={() => {
+            if (r.total === null) {
+              // Nothing printed to check against: say what friends will split and let the person decide.
+              Alert.alert(
+                'No receipt total to check',
+                `There is no total on this receipt, so TABLY cannot double-check the items. Friends will split ${formatAmount(rec.computedTotal, r.currency)} (the items plus any charges). Continue?`,
+                [{ text: 'Go back', style: 'cancel' }, { text: 'Continue', onPress: () => void create() }],
+              );
+            } else void create();
+          }}
+          disabled={creating || r.items.length === 0 || r.items.some((i) => i.lineTotal === null || i.description.trim() === '')} />
         <Text style={{ color: colors.textFaint, fontSize: 12, textAlign: 'center' }}>{draft.editBillId ? 'People on the link see the changes straight away.' : 'You will get a private link to share. Your edits are saved on this phone.'}</Text>
       </View>
     </SafeAreaView>

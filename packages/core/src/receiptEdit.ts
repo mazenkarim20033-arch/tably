@@ -12,7 +12,7 @@ export function emptyReceipt(): Receipt {
   return {
     merchant: null, date: null, currency: 'EGP', items: [], discounts: 0,
     subtotal: null, tax: null, service: null, tip: null, total: null,
-    taxIncluded: false, uncertain: [], unparsed: [],
+    taxIncluded: false, uncertain: [], unparsed: [], notes: [],
   };
 }
 

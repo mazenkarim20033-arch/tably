@@ -52,6 +52,8 @@ export interface Receipt {
   uncertain: Uncertain;
   /** Receipt rows the parser could not classify; shown to the user, never dropped silently. */
   unparsed: string[];
+  /** Plain-language notes about what the parser inferred ("No total line; calculated from the subtotal"). */
+  notes: string[];
 }
 
 export type ReconciliationStatus = 'ok' | 'mismatch' | 'incomplete';
