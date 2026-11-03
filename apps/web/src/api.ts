@@ -1,13 +1,22 @@
-export interface Holder { participant_id: string; units: number }
+export interface Holder { participant_id: string; units: number; shared: boolean }
 export interface BillItem {
-  id: string; description: string; quantity: number; line_total: number; remaining: number; claims: Holder[];
+  id: string; description: string; quantity: number; line_total: number;
+  /** whole units held exclusively by someone */
+  exclusive: number;
+  /** units nobody has claimed (0 once anyone shares the item) */
+  remaining: number;
+  claims: Holder[];
 }
 export interface PersonTotal {
-  id: string; name: string; items_total: number; discounts: number; tax: number; service: number; tip: number; total: number;
+  id: string; name: string; items_total: number; discounts: number; tax: number; service: number; tip: number;
+  /** money moved to or from this person by the bill creator (+ covers others, − is covered) */
+  adjustment: number;
+  total: number;
 }
+export interface Transfer { id: string; payer_id: string; beneficiary_id: string; amount: number; note: string }
 export interface BillView {
   store: string; date: string | null; currency: string; status: 'open' | 'closed';
-  items: BillItem[]; participants: PersonTotal[];
+  items: BillItem[]; participants: PersonTotal[]; transfers: Transfer[];
   totals: { items: number; discounts: number; tax: number; service: number; tip: number; total: number; assigned: number; unassigned: number };
 }
 export interface Me { id: string; token: string; name: string }
@@ -42,9 +51,11 @@ export const join = (token: string, name: string) =>
     { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) },
   );
 
-export const setClaim = (token: string, me: Me, itemId: string, units: number) =>
+export type ClaimChange = { units: number } | { share: boolean };
+
+export const setClaim = (token: string, me: Me, itemId: string, change: ClaimChange) =>
   call<BillView>(`/api/s/${encodeURIComponent(token)}/claims`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', 'X-Participant-Id': me.id, 'X-Participant-Token': me.token },
-    body: JSON.stringify({ item_id: itemId, units }),
+    body: JSON.stringify({ item_id: itemId, ...change }),
   });

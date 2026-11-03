@@ -34,6 +34,8 @@ class Bill(Base):
     tax_included: Mapped[bool] = mapped_column(Boolean, default=False)
     printed_total: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     status: Mapped[str] = mapped_column(String(10), default="open")  # open | closed
+    # Bumped on every change a viewer could see; the live-update stream watches it.
+    version: Mapped[int] = mapped_column(Integer, default=0)
 
     share_token: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     share_disabled: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -46,6 +48,7 @@ class Bill(Base):
     participants: Mapped[list[Participant]] = relationship(
         back_populates="bill", order_by="Participant.created_at", cascade="all, delete-orphan"
     )
+    transfers: Mapped[list["Transfer"]] = relationship(order_by="Transfer.created_at", cascade="all, delete-orphan")
 
 
 class Item(Base):
@@ -77,11 +80,34 @@ class Participant(Base):
 
 
 class Claim(Base):
-    """`units` of an item held by one participant. The sum over an item never exceeds its quantity."""
+    """One participant's hold on an item: either `units` whole units, or a seat in its shared pool.
+
+    Units nobody claimed exclusively form the pool; the pool is split equally among its sharers.
+    """
 
     __tablename__ = "claims"
-    __table_args__ = (CheckConstraint("units >= 1", name="ck_claim_units"),)
+    __table_args__ = (
+        CheckConstraint(
+            "(shared = TRUE AND units = 0) OR (shared = FALSE AND units >= 1)", name="ck_claim_mode"
+        ),
+    )
 
     participant_id: Mapped[str] = mapped_column(ForeignKey("participants.id", ondelete="CASCADE"), primary_key=True)
     item_id: Mapped[str] = mapped_column(ForeignKey("items.id", ondelete="CASCADE"), primary_key=True, index=True)
-    units: Mapped[int] = mapped_column(Integer)
+    units: Mapped[int] = mapped_column(Integer, default=0)
+    shared: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class Transfer(Base):
+    """Creator-entered adjustment: `payer` covers `amount` of what `beneficiary` would owe. Moves, never adds."""
+
+    __tablename__ = "transfers"
+    __table_args__ = (CheckConstraint("amount > 0", name="ck_transfer_amount"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_id)
+    bill_id: Mapped[str] = mapped_column(ForeignKey("bills.id", ondelete="CASCADE"), index=True)
+    payer_id: Mapped[str] = mapped_column(ForeignKey("participants.id", ondelete="CASCADE"))
+    beneficiary_id: Mapped[str] = mapped_column(ForeignKey("participants.id", ondelete="CASCADE"))
+    amount: Mapped[int] = mapped_column(BigInteger)
+    note: Mapped[str] = mapped_column(String(80), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

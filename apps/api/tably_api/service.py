@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
 from datetime import datetime, timezone
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
-from .models import Bill, Claim, Item, Participant
+from .models import Bill, Claim, Item, Participant, Transfer
 from .money import allocate
 
 
@@ -30,36 +29,47 @@ def _extras(bill: Bill) -> dict[str, int]:
 def compute_state(bill: Bill, claims: list[Claim]) -> dict:
     """Per-item holders, per-participant totals and bill totals.
 
-    Each item's line total is split by claimed units (plus an "unclaimed" bucket). Discounts, tax, service and
-    tip are then split in proportion to each person's item subtotal, with the unclaimed subtotal as a bucket
-    too, so what someone owes does not move when other people claim more. Every split sums exactly.
+    Per item: exclusive units are priced per unit; the remaining units form a pool split equally among
+    the people sharing it (or stay unclaimed). Discounts, tax, service and tip are then split in proportion
+    to each person's item subtotal, with the unclaimed subtotal as a bucket, so what someone owes does not
+    move when other people claim more. Creator transfers then move money between people without changing
+    the bill total. Every split sums exactly.
     """
     people = list(bill.participants)
     index = {p.id: n for n, p in enumerate(people)}
-    held: dict[str, dict[str, int]] = defaultdict(dict)  # item_id -> {participant_id: units}
+    held: dict[str, dict[str, Claim]] = {}
     for c in claims:
         if c.participant_id in index:
-            held[c.item_id][c.participant_id] = c.units
+            held.setdefault(c.item_id, {})[c.participant_id] = c
 
     base = [0] * len(people)
     unassigned_base = 0
     items_out = []
     for it in bill.items:
         holders = held.get(it.id, {})
-        units = [holders.get(p.id, 0) for p in people]
-        left = it.quantity - sum(units)
-        shares = allocate(it.line_total, units + [left])
+        excl = [(holders[p.id].units if p.id in holders and not holders[p.id].shared else 0) for p in people]
+        sharers = [n for n, p in enumerate(people) if p.id in holders and holders[p.id].shared]
+        pool_units = it.quantity - sum(excl)
+        shares = allocate(it.line_total, excl + [pool_units])
         for n, s in enumerate(shares[:-1]):
             base[n] += s
-        unassigned_base += shares[-1]
+        pool_amount = shares[-1]
+        if sharers:
+            for n, s in zip(sharers, allocate(pool_amount, [1] * len(sharers))):
+                base[n] += s
+        else:
+            unassigned_base += pool_amount
         items_out.append(
             {
                 "id": it.id,
                 "description": it.description,
                 "quantity": it.quantity,
                 "line_total": it.line_total,
-                "remaining": left,
-                "claims": [{"participant_id": pid, "units": u} for pid, u in holders.items() if u > 0],
+                "exclusive": sum(excl),
+                "remaining": 0 if sharers else pool_units,
+                "claims": [
+                    {"participant_id": pid, "units": c.units, "shared": c.shared} for pid, c in holders.items()
+                ],
             }
         )
 
@@ -69,27 +79,38 @@ def compute_state(bill: Bill, claims: list[Claim]) -> dict:
     for kind, amount in extras.items():
         parts[kind] = allocate(amount, weights) if amount and sum(weights) > 0 else [0] * len(weights)
 
+    totals = [base[n] + sum(parts[k][n] for k in extras) for n in range(len(people))]
+    adjustment = [0] * len(people)
+    transfers_out = []
+    for t in bill.transfers:
+        a, b = index.get(t.payer_id), index.get(t.beneficiary_id)
+        if a is None or b is None:
+            continue
+        moved = max(0, min(t.amount, totals[b]))  # cannot relieve someone of more than they owe
+        totals[a] += moved
+        totals[b] -= moved
+        adjustment[a] += moved
+        adjustment[b] -= moved
+        transfers_out.append(
+            {"id": t.id, "payer_id": t.payer_id, "beneficiary_id": t.beneficiary_id, "amount": moved, "note": t.note}
+        )
+
     items_sum = sum(i.line_total for i in bill.items)
     participants_out = []
-    assigned = 0
     for n, p in enumerate(people):
         row = {"id": p.id, "name": p.name, "items_total": base[n]}
         row.update({k: parts[k][n] for k in extras})
-        row["total"] = base[n] + sum(parts[k][n] for k in extras)
-        assigned += row["total"]
+        row["adjustment"] = adjustment[n]
+        row["total"] = totals[n]
         participants_out.append(row)
 
+    assigned = sum(totals)
     total = items_sum + sum(extras.values())
     return {
         "items": items_out,
         "participants": participants_out,
-        "totals": {
-            "items": items_sum,
-            **extras,
-            "total": total,
-            "assigned": assigned,
-            "unassigned": total - assigned,
-        },
+        "transfers": transfers_out,
+        "totals": {"items": items_sum, **extras, "total": total, "assigned": assigned, "unassigned": total - assigned},
     }
 
 
@@ -112,31 +133,59 @@ def link_problem(bill: Bill) -> tuple[int, str] | None:
     return None
 
 
-def set_claim(db: Session, bill: Bill, participant: Participant, item_id: str, units: int) -> None:
-    """Atomically set how many units of an item a participant holds (0 releases it).
+def bump(db: Session, bill_id: str) -> None:
+    db.execute(update(Bill).where(Bill.id == bill_id).values(version=Bill.version + 1))
 
-    The item row is locked (SELECT ... FOR UPDATE; BEGIN IMMEDIATE on SQLite) so concurrent claims on the
-    same item are serialized and the capacity check cannot be raced.
+
+def set_claim(
+    db: Session, bill: Bill, participant: Participant, item_id: str, units: int | None = None, share: bool | None = None
+) -> None:
+    """Atomically change one participant's hold on an item.
+
+    `units=n` holds n whole units (0 releases). `share=True` takes a seat in the item's shared pool,
+    `share=False` leaves it. The item row is locked (SELECT ... FOR UPDATE; BEGIN IMMEDIATE on SQLite) so
+    concurrent changes to the same item are serialized and the capacity checks cannot be raced.
+
+    Capacity: exclusive units across everyone never exceed the quantity, and when anyone shares, at least
+    one unit stays in the pool so sharers are never left holding nothing.
     """
     item = db.execute(
         select(Item).where(Item.id == item_id, Item.bill_id == bill.id).with_for_update()
     ).scalar_one_or_none()
     if item is None:
         raise LookupError("item")
-    others = db.scalar(
+
+    others_excl = db.scalar(
         select(func.coalesce(func.sum(Claim.units), 0)).where(
-            Claim.item_id == item_id, Claim.participant_id != participant.id
+            Claim.item_id == item_id, Claim.participant_id != participant.id, Claim.shared.is_(False)
         )
     )
-    if others + units > item.quantity:
-        db.rollback()
-        raise ClaimConflict(available=item.quantity - others)
+    other_sharers = db.scalar(
+        select(func.count()).select_from(Claim).where(
+            Claim.item_id == item_id, Claim.participant_id != participant.id, Claim.shared.is_(True)
+        )
+    )
     existing = db.get(Claim, (participant.id, item_id))
-    if units == 0:
+
+    if share is True:
+        if item.quantity - others_excl < 1:
+            db.rollback()
+            raise ClaimConflict(available=0)
         if existing:
-            db.execute(delete(Claim).where(Claim.participant_id == participant.id, Claim.item_id == item_id))
-    elif existing:
-        existing.units = units
-    else:
-        db.add(Claim(participant_id=participant.id, item_id=item_id, units=units))
+            existing.shared, existing.units = True, 0
+        else:
+            db.add(Claim(participant_id=participant.id, item_id=item_id, units=0, shared=True))
+    elif units:
+        cap = item.quantity - others_excl - (1 if other_sharers else 0)
+        if units > cap:
+            db.rollback()
+            raise ClaimConflict(available=max(cap, 0))
+        if existing:
+            existing.shared, existing.units = False, units
+        else:
+            db.add(Claim(participant_id=participant.id, item_id=item_id, units=units, shared=False))
+    elif existing and (units == 0 or (share is False and existing.shared)):
+        db.execute(delete(Claim).where(Claim.participant_id == participant.id, Claim.item_id == item_id))
+
+    bump(db, bill.id)
     db.commit()

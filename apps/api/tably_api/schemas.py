@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 MAX_MINOR = 100_000_000_00  # 100M in major units; keeps every sum far inside int64
 
@@ -38,8 +38,24 @@ class ParticipantCreate(StrictModel):
 
 
 class ClaimSet(StrictModel):
+    """Set whole units (`units`) or join/leave the item's shared pool (`share`). Exactly one."""
+
     item_id: str = Field(min_length=1, max_length=32)
-    units: int = Field(ge=0, le=999)
+    units: int | None = Field(default=None, ge=0, le=999)
+    share: bool | None = None
+
+    @model_validator(mode="after")
+    def _one_of(self):
+        if (self.units is None) == (self.share is None):
+            raise ValueError("send either units or share")
+        return self
+
+
+class TransferCreate(StrictModel):
+    payer_id: str = Field(min_length=1, max_length=32)
+    beneficiary_id: str = Field(min_length=1, max_length=32)
+    amount: int = Field(ge=1, le=MAX_MINOR)
+    note: Annotated[str, StringConstraints(strip_whitespace=True, max_length=80)] = ""
 
 
 class LinkUpdate(StrictModel):

@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     rate_limit_enabled: bool = True
     web_dist: str = "../web/dist"
     cors_origins: str = ""
+    sse_poll_seconds: float = 1.0
+    sse_max_seconds: int = 300  # clients reconnect, which also re-checks the link is still valid
 
 
 @lru_cache

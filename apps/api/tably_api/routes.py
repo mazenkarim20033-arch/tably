@@ -1,19 +1,22 @@
+import asyncio
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Response, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, UploadFile
+from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from . import service
 from .config import get_settings
-from .db import get_db
-from .models import Bill, Item, Participant
+from .db import SessionLocal, get_db
+from .models import Bill, Item, Participant, Transfer
 from .money import extras_total
 from .ratelimit import limit
-from .schemas import BillCreate, ClaimSet, LinkUpdate, ParticipantCreate
+from .schemas import BillCreate, ClaimSet, LinkUpdate, ParticipantCreate, TransferCreate
 from .security import hash_token, new_token, token_matches
 
 bills = APIRouter(prefix="/api/bills", tags=["creator"])
@@ -143,6 +146,35 @@ def get_image(bill_id: str, x_admin_token: str | None = Header(default=None), db
     return FileResponse(Path(get_settings().upload_dir) / bill.image_path)
 
 
+@bills.post("/{bill_id}/transfers", status_code=201, dependencies=[Depends(limit("transfer", 60, 3600))])
+def add_transfer(bill_id: str, body: TransferCreate, x_admin_token: str | None = Header(default=None),
+                 db: Session = Depends(get_db)):
+    bill = _admin_bill(db, bill_id, x_admin_token)
+    ids = {p.id for p in bill.participants}
+    if body.payer_id == body.beneficiary_id or not {body.payer_id, body.beneficiary_id} <= ids:
+        raise HTTPException(422, "Pick two different people on this bill.")
+    t = Transfer(bill_id=bill.id, payer_id=body.payer_id, beneficiary_id=body.beneficiary_id,
+                 amount=body.amount, note=body.note)
+    db.add(t)
+    service.bump(db, bill.id)
+    db.commit()
+    return _public_view(bill, db)
+
+
+@bills.delete("/{bill_id}/transfers/{transfer_id}")
+def remove_transfer(bill_id: str, transfer_id: str, x_admin_token: str | None = Header(default=None),
+                    db: Session = Depends(get_db)):
+    bill = _admin_bill(db, bill_id, x_admin_token)
+    t = db.get(Transfer, transfer_id)
+    if t is None or t.bill_id != bill.id:
+        raise HTTPException(404, "Adjustment not found.")
+    db.delete(t)
+    service.bump(db, bill.id)
+    db.commit()
+    db.refresh(bill)
+    return _public_view(bill, db)
+
+
 # ---------- participants (public link) ----------
 
 @public.get("/{token}", dependencies=[Depends(limit("view", 600, 60))])
@@ -161,6 +193,7 @@ def join(token: str, body: ParticipantCreate, db: Session = Depends(get_db)):
     p = Participant(bill_id=bill.id, name=body.name, name_key=body.name.casefold(), secret_hash=hash_token(secret))
     db.add(p)
     try:
+        service.bump(db, bill.id)
         db.commit()
     except IntegrityError:
         db.rollback()
@@ -179,7 +212,7 @@ def set_claim(token: str, body: ClaimSet, x_participant_token: str | None = Head
     if p is None or p.bill_id != bill.id or not token_matches(x_participant_token, p.secret_hash):
         raise HTTPException(401, "Join the bill first.")
     try:
-        service.set_claim(db, bill, p, body.item_id, body.units)
+        service.set_claim(db, bill, p, body.item_id, units=body.units, share=body.share)
     except LookupError:
         raise HTTPException(404, "Item not found.")
     except service.ClaimConflict as e:
@@ -189,3 +222,48 @@ def set_claim(token: str, body: ClaimSet, x_participant_token: str | None = Head
         )
     db.refresh(bill)
     return _public_view(bill, db)
+
+
+@public.get("/{token}/events", dependencies=[Depends(limit("events", 30, 60))])
+async def events(token: str, request: Request):
+    """Server-Sent Events: tells the page when the bill changed so it can refetch.
+
+    It watches Bill.version in the database, so it works across several server instances with no extra
+    infrastructure. Each connection costs one tiny query per poll interval.
+    """
+    cfg = get_settings()
+
+    def read_version() -> int | None:
+        with SessionLocal() as db:
+            bill = db.scalar(select(Bill).where(Bill.share_token == token))
+            if bill is None or service.link_problem(bill):
+                return None
+            return bill.version
+
+    first = await run_in_threadpool(read_version)
+    if first is None:
+        raise HTTPException(404, "Bill not found.")
+
+    async def stream():
+        last = first
+        started = last_sent = time.monotonic()
+        yield f"retry: 3000\nevent: ready\ndata: {last}\n\n"
+        while time.monotonic() - started < cfg.sse_max_seconds:
+            if await request.is_disconnected():
+                return
+            await asyncio.sleep(cfg.sse_poll_seconds)
+            current = await run_in_threadpool(read_version)
+            if current is None:
+                yield "event: gone\ndata: {}\n\n"
+                return
+            if current != last:
+                last = current
+                yield f"event: changed\ndata: {current}\n\n"
+                last_sent = time.monotonic()
+            elif time.monotonic() - last_sent > 15:
+                yield ": ping\n\n"
+                last_sent = time.monotonic()
+
+    return StreamingResponse(
+        stream(), media_type="text/event-stream", headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"}
+    )

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { formatAmount } from '@tably/core';
-import { ApiError, getBill, join, setClaim, type BillItem, type BillView, type Me } from './api';
+import { ApiError, getBill, join, setClaim, type BillItem, type BillView, type ClaimChange, type Me } from './api';
 
 const POLL_MS = 3000;
 
@@ -33,13 +33,33 @@ export function BillPage({ token }: { token: string }) {
     }
   }, [token]);
 
+  // Live updates: the server announces changes over SSE and we refetch. Polling stays as a safety net
+  // (fast while the stream is down, slow while it is up).
   useEffect(() => {
     void refresh();
-    const id = setInterval(() => { if (!document.hidden) void refresh(); }, POLL_MS);
+    let live = false;
+    let es: EventSource | null = null;
+    if (typeof EventSource !== 'undefined') {
+      es = new EventSource(`/api/s/${encodeURIComponent(token)}/events`);
+      es.addEventListener('ready', () => { live = true; });
+      es.addEventListener('changed', () => { void refresh(); });
+      es.addEventListener('gone', () => { live = false; void refresh(); });
+      es.onerror = () => { live = false; }; // the browser reconnects by itself
+    }
+    let n = 0;
+    const id = setInterval(() => {
+      n += 1;
+      if (document.hidden) return;
+      if (!live || n % 7 === 0) void refresh();
+    }, POLL_MS);
     const onVisible = () => { if (!document.hidden) void refresh(); };
     document.addEventListener('visibilitychange', onVisible);
-    return () => { clearInterval(id); document.removeEventListener('visibilitychange', onVisible); };
-  }, [refresh]);
+    return () => {
+      clearInterval(id);
+      es?.close();
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [refresh, token]);
 
   useEffect(() => {
     if (!toast) return;
@@ -52,11 +72,11 @@ export function BillPage({ token }: { token: string }) {
     if (bill && me && !bill.participants.some((p) => p.id === me.id)) setMe(null);
   }, [bill, me]);
 
-  async function change(item: BillItem, units: number) {
+  async function change(item: BillItem, change: ClaimChange) {
     if (!me) return;
     busy.current += 1;
     try {
-      setBill(await setClaim(token, me, item.id, units));
+      setBill(await setClaim(token, me, item.id, change));
     } catch (e) {
       if (e instanceof ApiError) {
         setToast(e.code === 'taken' ? 'Someone just took that. Pick something else.' : e.message);
@@ -100,7 +120,7 @@ export function BillPage({ token }: { token: string }) {
 
         <section className="items" aria-label="Receipt items">
           {bill.items.map((i) => (
-            <ItemRow key={i.id} item={i} cur={cur} names={names} meId={me?.id} disabled={!me || bill.status !== 'open'} onChange={(u) => change(i, u)} />
+            <ItemRow key={i.id} item={i} cur={cur} names={names} meId={me?.id} disabled={!me || bill.status !== 'open'} onChange={(c) => change(i, c)} />
           ))}
         </section>
 
@@ -127,6 +147,10 @@ export function BillPage({ token }: { token: string }) {
                   {formatAmount(mine.items_total, cur)} items
                   {mine.service + mine.tax + mine.tip + mine.discounts !== 0 &&
                     ` + ${formatAmount(mine.service + mine.tax + mine.tip + mine.discounts, cur)} share of extras`}
+                  {mine.adjustment !== 0 &&
+                    (mine.adjustment > 0
+                      ? ` + ${formatAmount(mine.adjustment, cur)} you are covering`
+                      : ` − ${formatAmount(-mine.adjustment, cur)} covered for you`)}
                 </span>
               )}
             </div>
@@ -162,41 +186,69 @@ function NameForm({ onJoin }: { onJoin: (name: string) => Promise<void> }) {
 }
 
 function ItemRow({ item, cur, names, meId, disabled, onChange }: {
-  item: BillItem; cur: string; names: Map<string, string>; meId?: string; disabled: boolean; onChange: (units: number) => void;
+  item: BillItem; cur: string; names: Map<string, string>; meId?: string; disabled: boolean; onChange: (c: ClaimChange) => void;
 }) {
-  const mineUnits = item.claims.find((c) => c.participant_id === meId)?.units ?? 0;
+  const mine = item.claims.find((c) => c.participant_id === meId);
+  const mineUnits = mine && !mine.shared ? mine.units : 0;
+  const mineShared = !!mine?.shared;
   const others = item.claims.filter((c) => c.participant_id !== meId);
-  const full = item.remaining === 0 && mineUnits === 0;
-  const holders = others.map((c) => `${names.get(c.participant_id) ?? '?'}${item.quantity > 1 ? ` ×${c.units}` : ''}`).join(', ');
+  const otherSharers = others.filter((c) => c.shared);
+  const maxUnits = item.quantity - (item.exclusive - mineUnits) - (otherSharers.length > 0 ? 1 : 0);
+  const canShare = item.quantity - (item.exclusive - mineUnits) >= 1;
+  const nameOf = (id: string) => names.get(id) ?? "?";
 
+  const holders = [
+    ...others.filter((c) => !c.shared).map((c) => nameOf(c.participant_id) + (item.quantity > 1 ? " ×" + c.units : "")),
+    ...(otherSharers.length ? ["split: " + otherSharers.map((c) => nameOf(c.participant_id)).join(", ")] : []),
+  ].join(" · ");
+
+  const price = <span className="price">{formatAmount(item.line_total, cur)}</span>;
   const label = (
     <span className="name">
-      {item.quantity > 1 ? `${item.quantity} × ` : ''}{item.description}
+      {item.quantity > 1 ? item.quantity + " × " : ""}{item.description}
       {holders && <small className="holders">{holders}</small>}
     </span>
   );
-  const price = <span className="price">{formatAmount(item.line_total, cur)}</span>;
+  const pill = (
+    <button className="pill" aria-pressed={mineShared} disabled={disabled || (!mineShared && !canShare)} onClick={() => onChange({ share: !mineShared })}>
+      Split
+    </button>
+  );
 
   if (item.quantity === 1) {
+    const selected = mineUnits === 1 || mineShared;
+    const canTake = maxUnits >= 1;
+    const tap = () => {
+      if (mineShared) onChange({ share: false });
+      else if (mineUnits) onChange({ units: 0 });
+      else if (canTake) onChange({ units: 1 });
+      else onChange({ share: true }); // the item is already being split, so tapping joins the split
+    };
     return (
-      <button className="item" aria-pressed={mineUnits === 1} disabled={disabled || full} onClick={() => onChange(mineUnits ? 0 : 1)}>
-        <span className="check" />
-        {label}
+      <div className="item">
+        <button className="pick" aria-pressed={selected} disabled={disabled || (!selected && !canTake && !canShare)} onClick={tap}>
+          <span className="check" />
+          {label}
+        </button>
+        {pill}
         {price}
-      </button>
+      </div>
     );
   }
-  const max = mineUnits + item.remaining;
+  const max = Math.max(maxUnits, mineUnits);
   return (
-    <div className="item static">
-      <span className="check" aria-hidden data-on={mineUnits > 0} />
+    <div className="item multi">
+      <span className="check" aria-hidden data-on={mineUnits > 0 || mineShared} />
       {label}
-      <span className="stepper">
-        <button aria-label="Fewer" disabled={disabled || mineUnits === 0} onClick={() => onChange(mineUnits - 1)}>−</button>
-        <span aria-live="polite">{mineUnits}</span>
-        <button aria-label="More" disabled={disabled || mineUnits >= max} onClick={() => onChange(mineUnits + 1)}>+</button>
-      </span>
       {price}
+      <div className="controls">
+        <span className="stepper">
+          <button aria-label="Fewer" disabled={disabled || mineUnits === 0} onClick={() => onChange({ units: mineUnits - 1 })}>−</button>
+          <span aria-live="polite">{mineUnits}</span>
+          <button aria-label="More" disabled={disabled || mineUnits >= max} onClick={() => onChange({ units: mineUnits + 1 })}>+</button>
+        </span>
+        {pill}
+      </div>
     </div>
   );
 }
@@ -214,7 +266,7 @@ function Progress({ bill }: { bill: BillView }) {
       {bill.participants.length > 0 && (
         <ul className="people">
           {bill.participants.map((p) => (
-            <li key={p.id}><span>{p.name}</span><span>{formatAmount(p.total, bill.currency)}</span></li>
+            <li key={p.id}><span>{p.name}{p.adjustment !== 0 && <small className="adj">{p.adjustment > 0 ? " covers " + formatAmount(p.adjustment, bill.currency) + " for others" : " · " + formatAmount(-p.adjustment, bill.currency) + " covered"}</small>}</span><span>{formatAmount(p.total, bill.currency)}</span></li>
           ))}
         </ul>
       )}
