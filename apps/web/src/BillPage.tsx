@@ -5,6 +5,24 @@ import { ApiError, getBill, join, setClaim, type BillItem, type BillView, type C
 
 const POLL_MS = 3000;
 
+/** What the item rows should look like right after my tap, before the server confirms. Totals wait for the server. */
+function withClaim(b: BillView, meId: string, itemId: string, c: ClaimChange): BillView {
+  return {
+    ...b,
+    items: b.items.map((it) => {
+      if (it.id !== itemId) return it;
+      const others = it.claims.filter((x) => x.participant_id !== meId);
+      const mine =
+        'share' in c
+          ? c.share ? [{ participant_id: meId, units: 0, shared: true }] : []
+          : c.units > 0 ? [{ participant_id: meId, units: c.units, shared: false }] : [];
+      const claims = [...others, ...mine];
+      const exclusive = claims.reduce((s, x) => s + (x.shared ? 0 : x.units), 0);
+      return { ...it, claims, exclusive, remaining: claims.some((x) => x.shared) ? 0 : it.quantity - exclusive };
+    }),
+  };
+}
+
 function loadMe(token: string): Me | null {
   try {
     const raw = localStorage.getItem(`tably.me.${token}`);
@@ -77,16 +95,22 @@ export function BillPage({ token }: { token: string }) {
   async function change(item: BillItem, change: ClaimChange) {
     if (!me) return;
     busy.current += 1;
+    // Show the tap at once; the server's answer (or a reload after an error) replaces this guess.
+    setBill((prev) => (prev ? withClaim(prev, me.id, item.id, change) : prev));
+    let failed = false;
     try {
       setBill(await setClaim(token, me, item.id, change));
     } catch (e) {
+      failed = true;
       if (e instanceof ApiError) {
         setToast(e.code === 'taken' ? 'Someone just took that. Pick something else.' : e.message);
         if (e.status === 401) setMe(null);
+      } else {
+        setToast('Could not reach the server. Check your connection.');
       }
     } finally {
       busy.current -= 1;
-      void refresh();
+      if (failed) void refresh(); // undo the guess; on success the response above is already the truth
     }
   }
 

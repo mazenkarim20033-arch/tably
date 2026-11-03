@@ -15,7 +15,9 @@ export type ItemFlag =
   | 'low-ocr-confidence'
   | 'price-unreadable'
   | 'quantity-inferred'
-  | 'unit-price-unknown';
+  | 'unit-price-unknown'
+  /** Removing this row makes the items add up to the printed subtotal: it may not be an item. */
+  | 'does-not-add-up';
 
 export interface ReceiptItem {
   id: string;

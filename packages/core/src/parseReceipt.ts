@@ -94,9 +94,21 @@ function splitTrailingAmounts(rowText: string): Amounts {
   };
 }
 
+// Header and footer lines that are never items, whatever number they end with: a ZIP code, phone, web address, a time.
+const NON_ITEM: RegExp[] = [
+  /\b[A-Z]{2}\s+\d{5}(-\d{4})?\b/, // US state + ZIP (case-sensitive on purpose)
+  /\b\d{3}[-.\s]\d{3}[-.\s]\d{4}\b/, // phone number
+  /\b(www\.|https?:)|\.(com|net|org|eg)\b/i,
+  /\b\d{1,2}:\d{2}(:\d{2})?\s*(am|pm)?(?!\w)/i, // a time of day
+  /\b(street|drive|avenue|boulevard|blvd|road)\b/i,
+];
+
 function classify(text: string): Kind {
   const t = normalizeArabic(text);
+  // Table and check numbers ("Tbl 52/1 Chk 5453 Gst 2"): "Gst" there means guests, not tax.
+  if (/\b(tbl|chk)\b/i.test(t)) return 'ignore';
   for (const [kind, re] of KEYWORDS) if (re.test(t)) return kind;
+  if (NON_ITEM.some((re) => re.test(text))) return 'ignore';
   return 'item';
 }
 
@@ -116,7 +128,8 @@ function detectDate(rows: Row[]): { iso: string | null; ambiguous: boolean } {
       const a = +m[1]!;
       const b = +m[2]!;
       const y = m[3]!.length === 2 ? 2000 + +m[3]! : +m[3]!;
-      // Egyptian receipts are day-first. Only flag when the order genuinely could be swapped.
+      // Day-first (Egypt) unless only month-first makes sense (06/25/21). Flag when both readings are possible.
+      if (a <= 12 && b > 12) return mk(y, a, b, false);
       return mk(y, b, a, a <= 12 && b <= 12 && a !== b);
     }
   }
@@ -161,11 +174,26 @@ export function parseReceipt(lines: OcrLine[]): Receipt {
   }
   if (!merchant) uncertain.push('merchant');
 
+  // If the receipt prints prices with decimals (12.50), a bare integer at the end of a row is not a price
+  // (a ZIP code, a guest count, a reference number). Receipts that print whole numbers keep accepting them.
+  let withDecimals = 0;
+  let wholeOnly = 0;
+  for (const r of rows) {
+    if (classify(r.text) === 'ignore') continue;
+    const raws = splitTrailingAmounts(r.text).raw;
+    const last = raws[raws.length - 1];
+    if (!last) continue;
+    if (/[.,]\d{2}$/.test(last)) withDecimals += 1;
+    else if (/^\d+$/.test(last)) wholeOnly += 1;
+  }
+  const decimalStyle = withDecimals >= 2 && withDecimals >= wholeOnly;
+
   let lastWasItem = false;
   for (const row of rows) {
     const kind = classify(row.text);
     const amt = splitTrailingAmounts(row.text);
-    const hasPrice = amt.raw.length > 0;
+    const lastRaw = amt.raw[amt.raw.length - 1] ?? '';
+    const hasPrice = amt.raw.length > 0 && !(kind === 'item' && decimalStyle && !/[.,]\d{1,2}$/.test(lastRaw));
 
     if (kind === 'ignore' || row.text === merchant) {
       lastWasItem = false;
@@ -179,7 +207,7 @@ export function parseReceipt(lines: OcrLine[]): Receipt {
         continue;
       }
       if (kind === 'discount') discounts += v > 0 ? -v : v;
-      else if (totals[kind] === undefined || kind === 'total') totals[kind] = v;
+      else if (totals[kind] === undefined || kind === 'total' || (kind === 'tax' && /total/i.test(row.text))) totals[kind] = v;
       if (row.confidence < 0.6) uncertain.push(kind);
       continue;
     }
@@ -213,6 +241,15 @@ export function parseReceipt(lines: OcrLine[]): Receipt {
       quantity = +trail[2]!;
       description = trail[1]!;
       qtyExplicit = true;
+    } else {
+      // POS style: "1 SANGRIA 11.99" / "2 BEER 20.00" (the price is the line total)
+      const pos = normalizeDigits(description).match(/^(\d{1,2})\s+(?=[A-Za-z؀-ۿ])(.+)$/);
+      if (pos && +pos[1]! >= 1) {
+        quantity = +pos[1]!;
+        description = pos[2]!;
+        qtyExplicit = true;
+        if (quantity > 1) flags.push('quantity-inferred');
+      }
     }
 
     const lineTotal = amt.values[amt.values.length - 1] ?? null;
@@ -265,6 +302,8 @@ export function parseReceipt(lines: OcrLine[]): Receipt {
     unparsed,
   };
 
+  flagSuspects(items, uncertain, totals, discounts);
+
   // Prove, don't assume: if items alone already equal the printed total, tax/service are inclusive.
   const itemsSum = items.reduce((s, i) => s + (i.lineTotal ?? 0), 0);
   if (receipt.total !== null && (receipt.tax || receipt.service)) {
@@ -274,4 +313,38 @@ export function parseReceipt(lines: OcrLine[]): Receipt {
   }
   if (receipt.total === null) uncertain.push('total');
   return receipt;
+}
+
+/**
+ * If the items do not add up to the printed subtotal (or the total minus tax/service/tip), look for one or two
+ * rows whose removal fixes it exactly. Only when that answer is unique are those rows flagged, never removed:
+ * the person decides. This catches stray rows (a reference number, a stray digit) that the row rules missed.
+ */
+function flagSuspects(
+  items: ReceiptItem[], uncertain: string[], totals: Partial<Record<Kind, Minor>>, discounts: Minor,
+): void {
+  const priced = items.filter((i) => i.lineTotal !== null);
+  const sum = priced.reduce((s, i) => s + (i.lineTotal as number), 0);
+  const targets: number[] = [];
+  if (totals.subtotal !== undefined) targets.push(totals.subtotal + 0);
+  else if (totals.total !== undefined) {
+    const extras = (totals.tax ?? 0) + (totals.service ?? 0) + (totals.tip ?? 0);
+    targets.push(totals.total - extras - discounts, totals.total - (totals.tip ?? 0) - discounts);
+  }
+  if (targets.length === 0 || targets.includes(sum) || priced.length > 40) return;
+
+  const solutions: number[][] = [];
+  for (let i = 0; i < priced.length; i++) {
+    if (targets.includes(sum - (priced[i]!.lineTotal as number))) solutions.push([i]);
+    for (let j = i + 1; j < priced.length; j++) {
+      if (targets.includes(sum - (priced[i]!.lineTotal as number) - (priced[j]!.lineTotal as number))) solutions.push([i, j]);
+    }
+  }
+  const smallest = solutions.filter((s) => s.length === Math.min(...solutions.map((x) => x.length)));
+  if (smallest.length !== 1) return; // no answer, or several: do not guess
+  for (const idx of smallest[0]!) {
+    const item = priced[idx]!;
+    item.flags.push('does-not-add-up');
+    uncertain.push(`items.${item.id}.lineTotal`);
+  }
 }

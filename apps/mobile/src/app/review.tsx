@@ -125,6 +125,11 @@ export default function Review() {
         {r.items.map((i) => (
           <View key={i.id} style={{ backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, borderRadius: radius.md, padding: space.md, gap: space.sm }}>
             <TextField value={i.description} uncertain={flagged(`items.${i.id}.description`)} onChange={(v) => edit(setItemDescription(r, i.id, v))} placeholder="Item" />
+            {i.flags.includes('does-not-add-up') && (
+              <Text style={{ color: colors.warning, fontSize: 13 }}>
+                This may not be an item: without it, the items match the receipt subtotal. Tap × to remove it if it is something else (an address, a code).
+              </Text>
+            )}
             <View style={{ flexDirection: 'row', gap: space.sm, alignItems: 'flex-end' }}>
               <TextField label="Qty" width={70} keyboardType="number-pad" value={String(i.quantity)} uncertain={flagged(`items.${i.id}.quantity`)} onChange={(v) => edit(setItemQuantity(r, i.id, Number(v)))} />
               <View style={{ flex: 1 }}>

@@ -105,3 +105,83 @@ describe('honesty about bad input', () => {
     expect(r.items[0]!.flags).toContain('low-ocr-confidence');
   });
 });
+
+describe('real receipt: Popeyes, Lake Geneva (US, month-first date, POS style rows)', () => {
+  // Rows as Apple Vision reads them from the photo: item names left, prices right.
+  const r = parseReceipt(
+    ocr([
+      'POPEYES',
+      '811 WRIGLEY DRIVE',
+      'LAKE GENEVA, WI 53147',
+      '262-248-4381',
+      'WWW.POPEYESLKG.COM',
+      '1488 1488Kale',
+      "Tbl 52/1  Chk 5453  Gst 2",
+      "Jun25'21 07:21PM",
+      '1 SANGRIA|11.99',
+      '1 TITO VODKA|8.99',
+      '1 CRAB LEG 1.5LB|200.00',
+      '1 PORK BBQ SAND|15.99',
+      'Subtotal|236.97',
+      'Tax Total|13.03',
+      '08:01PM Total Due|250.00',
+      'THANK YOU FOR JOINING US',
+      'PLEASE PAY YOUR SERVER',
+      'WWW.POPEYESLKG.COM',
+      'SIGN UP FOR OUR VIP LIST',
+      'FRI:06/25/21 19:21:31',
+    ]),
+  );
+  it('does not turn the ZIP code or the guest count into items or tax', () => {
+    expect(r.items.map((i) => [i.description, i.quantity, i.lineTotal])).toEqual([
+      ['SANGRIA', 1, 1199],
+      ['TITO VODKA', 1, 899],
+      ['CRAB LEG 1.5LB', 1, 20000],
+      ['PORK BBQ SAND', 1, 1599],
+    ]);
+  });
+  it('reads the totals, the date and reconciles exactly', () => {
+    expect([r.subtotal, r.tax, r.total]).toEqual([23697, 1303, 25000]);
+    expect(r.merchant).toBe('POPEYES');
+    expect(r.date).toBe('2021-06-25');
+    expect(reconcile(r).status).toBe('ok');
+  });
+});
+
+describe('stray rows', () => {
+  it('flags a lone row whose removal makes the items match the subtotal, but keeps it', () => {
+    const r = parseReceipt(ocr(['CAFE X', 'Latte|60.00', 'Cake|40.00', 'Mystery thing|25.00', 'Subtotal|100.00', 'Total|100.00']));
+    const mystery = r.items.find((i) => i.description === 'Mystery thing')!;
+    expect(r.items).toHaveLength(3); // never removed automatically
+    expect(mystery.flags).toContain('does-not-add-up');
+    expect(r.uncertain).toContain(`items.${mystery.id}.lineTotal`);
+    expect(r.items.filter((i) => i.flags.includes('does-not-add-up'))).toHaveLength(1);
+  });
+  it('does not guess when more than one fix is possible', () => {
+    const r = parseReceipt(ocr(['CAFE X', 'A|10.00', 'B|10.00', 'C|50.00', 'Subtotal|50.00', 'Total|50.00']));
+    // removing A+B or removing... C alone does not fit; A and B together do, but also nothing else: unique, so flagged
+    expect(r.items.some((i) => i.flags.includes('does-not-add-up'))).toBe(true);
+    const r2 = parseReceipt(ocr(['CAFE X', 'A|10.00', 'B|10.00', 'C|10.00', 'Subtotal|20.00', 'Total|20.00']));
+    expect(r2.items.some((i) => i.flags.includes('does-not-add-up'))).toBe(false); // A, B or C: ambiguous
+  });
+  it('leaves receipts that already add up alone', () => {
+    const r = parseReceipt(ocr(['CAFE X', 'Latte|60.00', 'Cake|40.00', 'Subtotal|100.00', 'Total|100.00']));
+    expect(r.items.some((i) => i.flags.includes('does-not-add-up'))).toBe(false);
+  });
+});
+
+describe('whole-number prices still work', () => {
+  it('accepts integers on receipts that print no decimals', () => {
+    const r = parseReceipt(ocr(['مطعم', 'كشري|75', 'عصير|60', 'الاجمالي|135']));
+    expect(r.items.map((i) => i.lineTotal)).toEqual([7500, 6000]);
+    expect(reconcile(r).status).toBe('ok');
+  });
+});
+
+describe('dates', () => {
+  it('reads US month-first when only that is valid, and flags truly ambiguous ones', () => {
+    expect(parseReceipt(ocr(['CAFE X', '06/25/2021', 'Latte|60.00'])).date).toBe('2021-06-25');
+    expect(parseReceipt(ocr(['CAFE X', '25/06/2021', 'Latte|60.00'])).date).toBe('2021-06-25');
+    expect(parseReceipt(ocr(['CAFE X', '04/05/2021', 'Latte|60.00'])).uncertain).toContain('date');
+  });
+});

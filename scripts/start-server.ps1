@@ -1,10 +1,17 @@
-# Starts the TABLY server on this PC (using your Neon database) and opens a free public address for it.
+# Starts the TABLY server on this PC and opens a free public address for it.
 #
-#   powershell -ExecutionPolicy Bypass -File scripts\start-server.ps1
+#   powershell -ExecutionPolicy Bypass -File scripts\start-server.ps1                (database on this PC: fast, the default)
+#   powershell -ExecutionPolicy Bypass -File scripts\start-server.ps1 -Database neon (cloud database, needs .env.local)
+#
+# Why local is the default: the server runs on this PC, and a cloud database on another continent adds ~0.2 s to every
+# query (a tap on an item makes ~16 of them), which feels like several seconds of lag. The local database is the file
+# data\tably.db. Back it up if you care about old bills.
 #
 # Keep the window open while people use the app. Close it (or press Ctrl+C) to stop everything.
 # The public address (https://something.trycloudflare.com) changes every time you start this;
 # paste the new one into the app: Home > Server settings.
+
+param([ValidateSet('local', 'neon')][string]$Database = 'local')
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
@@ -17,15 +24,27 @@ if (-not (Get-Command cloudflared -ErrorAction SilentlyContinue)) {
     throw "cloudflared is not installed. Install it with: winget install Cloudflare.cloudflared (then open a new window)."
 }
 
-# Read the two Neon connection strings from .env.local. Only these two names are loaded; nothing is printed.
-$envFile = Join-Path $root '.env.local'
-if (-not (Test-Path $envFile)) { throw ".env.local not found. Run 'neon env pull' in the project folder first." }
-foreach ($line in Get-Content $envFile) {
-    if ($line -match '^\s*(DATABASE_URL|DATABASE_URL_UNPOOLED)\s*=\s*(.*)$') {
-        [Environment]::SetEnvironmentVariable($Matches[1], $Matches[2].Trim().Trim('"'), 'Process')
+if ($Database -eq 'neon') {
+    # Read the two Neon connection strings from .env.local. Only these two names are loaded; nothing is printed.
+    $envFile = Join-Path $root '.env.local'
+    if (-not (Test-Path $envFile)) { throw ".env.local not found. Run 'neon env pull' in the project folder first." }
+    foreach ($line in Get-Content $envFile) {
+        if ($line -match '^\s*(DATABASE_URL|DATABASE_URL_UNPOOLED)\s*=\s*(.*)$') {
+            [Environment]::SetEnvironmentVariable($Matches[1], $Matches[2].Trim().Trim('"'), 'Process')
+        }
     }
+    if (-not $env:DATABASE_URL) { throw "DATABASE_URL is missing from .env.local." }
+    Write-Host 'Database: Neon (cloud). Taps will be slower if it is far away.'
 }
-if (-not $env:DATABASE_URL) { throw "DATABASE_URL is missing from .env.local." }
+else {
+    # A SQLite file next to the project. Make sure no cloud settings from the environment leak in.
+    Remove-Item Env:DATABASE_URL, Env:DATABASE_URL_UNPOOLED, Env:TABLY_MIGRATION_DATABASE_URL -ErrorAction SilentlyContinue
+    $dataDir = Join-Path $root 'data'
+    New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
+    $dbFile = Join-Path $dataDir 'tably.db'
+    $env:TABLY_DATABASE_URL = 'sqlite:///' + $dbFile.Replace('\', '/')
+    Write-Host "Database: this PC ($dbFile)"
+}
 
 # The shared bill page is part of the same server; build it once.
 if (-not (Test-Path (Join-Path $dist 'index.html'))) {
