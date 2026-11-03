@@ -57,7 +57,9 @@ export function publicView(b: Bundle) {
   };
 }
 
-export function adminView(b: Bundle) {
+export interface EventRow { payment_id: string; at: string; actor: string; from_status: string | null; to_status: string; note: string }
+
+export function adminView(b: Bundle, events: EventRow[] = []) {
   const view = publicView(b);
   const names = new Map(b.people.map((p) => [p.id, p.name]));
   const reminders = new Map(b.people.map((p) => [p.id, p]));
@@ -83,7 +85,9 @@ export function adminView(b: Bundle) {
       participant_name: names.get(p.participant_id) ?? '?',
       payer_note: p.payer_note,
       created_at: p.created_at,
-      events: [] as Array<{ at: string; actor: string; from: string | null; to: string; note: string }>,
+      events: events
+        .filter((e) => e.payment_id === p.id)
+        .map((e) => ({ at: e.at, actor: e.actor, from: e.from_status, to: e.to_status, note: e.note })),
     })),
   };
 }
