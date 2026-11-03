@@ -593,8 +593,21 @@ export function parseWithSlope(clean: OcrLine[], slope: number): { receipt: Rece
       if (LETTER.test(row.text)) unparsed.push(row.text);
       return;
     }
+    // Other prices this line could be, from the recognizer's runner-up readings of any fragment on the row.
+    const alts = new Set<number>();
+    for (const frag of row.frags) {
+      for (const alt of frag.alternates ?? []) {
+        const swapped = row.frags.map((f) => (f === frag ? alt : f.text.trim())).join('  ');
+        const vals = splitAmounts(swapped).values;
+        const v = vals[vals.length - 1];
+        if (v !== null && v !== undefined && v !== lineTotal) alts.add(v);
+      }
+    }
     const id = `i${nextId++}`;
-    items.push({ id, description, quantity, unitPrice, lineTotal, confidence: row.confidence, flags });
+    items.push({
+      id, description, quantity, unitPrice, lineTotal, confidence: row.confidence, flags,
+      ...(alts.size > 0 ? { altLineTotals: [...alts] } : {}),
+    });
     for (const f of flags) {
       const field = f === 'price-unreadable' || f === 'unit-price-unknown' ? 'lineTotal' : f === 'quantity-inferred' ? 'quantity' : 'description';
       uncertain.push(`items.${id}.${field}`);
@@ -821,6 +834,18 @@ const CONFUSABLE: Record<string, string[]> = {
 function findMisreads(items: ReceiptItem[], targets: Minor[]): Array<{ item: ReceiptItem; value: Minor }> {
   const sum = items.reduce((s, i) => s + (i.lineTotal ?? 0), 0);
   const found: Array<{ item: ReceiptItem; value: Minor }> = [];
+
+  // First choice: the recognizer's own runner-up readings. If one of them makes the items add up, that is evidence
+  // from the scanner itself, far stronger than a guess about which digits look alike.
+  const fromAlternates: Array<{ item: ReceiptItem; value: Minor }> = [];
+  for (const item of items) {
+    if (item.lineTotal === null) continue;
+    for (const alt of item.altLineTotals ?? []) {
+      if (alt > 0 && alt !== item.lineTotal && targets.includes(sum - item.lineTotal + alt)) fromAlternates.push({ item, value: alt });
+    }
+  }
+  if (fromAlternates.length > 0) return fromAlternates;
+
   for (const item of items) {
     if (item.lineTotal === null || item.lineTotal <= 0) continue;
     const digits = String(item.lineTotal).split('');

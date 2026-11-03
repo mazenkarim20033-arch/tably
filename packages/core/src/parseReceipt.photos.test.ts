@@ -9,7 +9,7 @@ import type { OcrLine } from './receipt';
  * one observation per run of text. `tilt` shears the whole page: the right edge sits lower than the left, so the
  * price column drifts away from the names, which is what a crooked phone photo does.
  */
-type Frag = [text: string, x: number, w: number, conf?: number];
+type Frag = [text: string, x: number, w: number, conf?: number, alternates?: string[]];
 type PhotoRow = { frags: Frag[]; h?: number };
 
 function photo(rows: PhotoRow[], tilt = 0, pitch = 0.034): OcrLine[] {
@@ -17,8 +17,8 @@ function photo(rows: PhotoRow[], tilt = 0, pitch = 0.034): OcrLine[] {
   let y = 0.06;
   for (const row of rows) {
     const h = row.h ?? 0.018;
-    for (const [text, x, w, conf] of row.frags) {
-      out.push({ text, x, y: y + tilt * (x + w / 2), w, h, confidence: conf ?? 0.95 });
+    for (const [text, x, w, conf, alternates] of row.frags) {
+      out.push({ text, x, y: y + tilt * (x + w / 2), w, h, confidence: conf ?? 0.95, ...(alternates ? { alternates } : {}) });
     }
     y += pitch;
   }
@@ -31,7 +31,7 @@ const r = (...frags: Frag[]): PhotoRow => ({ frags });
 // Table 9: bilingual restaurant receipt. Printed: 11 lines, 2 of them free, subtotal 1,735.00 + 12% service 208.20 +
 // 14% VAT 272.05 = 2,215.25. The tea is printed 60.00.
 // ---------------------------------------------------------------------------------------------------------------
-function table9(opts: { tilt?: number; teaPrice?: string; teaConf?: number } = {}): OcrLine[] {
+function table9(opts: { tilt?: number; teaPrice?: string; teaConf?: number; teaAlts?: string[] } = {}): OcrLine[] {
   const tea = opts.teaPrice ?? '60.00';
   return photo(
     [
@@ -54,7 +54,7 @@ function table9(opts: { tilt?: number; teaPrice?: string; teaConf?: number } = {
       r(['1', 0.07, 0.03], ['Grilled Chicken Wings', 0.17, 0.35], ['285.00', 0.72, 0.12]),
       r(['جوانح دجاج مشوية', 0.3, 0.3]),
       r(['1', 0.07, 0.03], ['Chicken Tawouk', 0.17, 0.3], ['طاووق', 0.5, 0.1], ['385.00', 0.72, 0.12]),
-      r(['1', 0.07, 0.03], ['Flavoured Tea', 0.17, 0.28], ['شاي', 0.5, 0.06], [tea, 0.72, 0.12, opts.teaConf]),
+      r(['1', 0.07, 0.03], ['Flavoured Tea', 0.17, 0.28], ['شاي', 0.5, 0.06], [tea, 0.72, 0.12, opts.teaConf, opts.teaAlts]),
       r(['1', 0.07, 0.03], ['Small Water', 0.17, 0.25], ['مياه صغيرة', 0.5, 0.15], ['45.00', 0.72, 0.12]),
       r(['Sub Total', 0.2, 0.2], ['1,735.00', 0.7, 0.14]),
       r(['Service Charge', 0.12, 0.3], ['(12%):', 0.18, 0.12]),
@@ -126,6 +126,21 @@ describe('Table 9 (bilingual, with the page tilted like a real photo)', () => {
     expect(reconcile(rc).status).toBe('mismatch');
     const fixed = setItemLineTotal(rc, tea.id, tea.suggestedLineTotal!);
     expect(reconcile(fixed).status).toBe('ok');
+  });
+
+  it("uses the scanner's own runner-up reading to settle a misread that digit rules cannot", () => {
+    // 80.00 could be 60.00, 385.00 could be 365.00 and 285.00 could be 265.00: three equally plausible lines.
+    // Apple Vision listed 60.00 as its second reading of the tea line only, which settles it.
+    const rc = parseReceipt(table9({ tilt: 0.02, teaPrice: '80.00', teaAlts: ['60.00'] }));
+    const tea = rc.items.find((i) => i.description.startsWith('Flavoured Tea'))!;
+    expect(tea.suggestedLineTotal).toBe(6000);
+    expect(tea.flags).toContain('maybe-misread');
+    expect(tea.lineTotal).toBe(8000); // still as read until the person accepts
+  });
+
+  it('ignores a runner-up reading that does not make the items add up', () => {
+    const rc = parseReceipt(table9({ tilt: 0.02, teaPrice: '80.00', teaAlts: ['30.00'] }));
+    expect(rc.items.some((i) => i.suggestedLineTotal !== undefined)).toBe(false);
   });
 
   it('refuses to guess when several prices could be the misread one and nothing tells them apart', () => {

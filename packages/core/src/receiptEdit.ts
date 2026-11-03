@@ -41,7 +41,10 @@ export function setItemQuantity(r: Receipt, id: string, quantity: number): Recei
 export function setItemLineTotal(r: Receipt, id: string, lineTotal: Minor | null): Receipt {
   return patchItem(r, id, (i) => ({
     ...i, lineTotal, unitPrice: unitFor(i.quantity, lineTotal),
-    flags: i.flags.filter((f) => f !== 'price-unreadable' && f !== 'unit-price-unknown' && f !== 'low-ocr-confidence'),
+    // Any edit settles the doubt about this price, so the suggestion and its flags go away.
+    suggestedLineTotal: undefined,
+    altLineTotals: undefined,
+    flags: i.flags.filter((f) => !['price-unreadable', 'unit-price-unknown', 'low-ocr-confidence', 'maybe-misread', 'does-not-add-up'].includes(f)),
   }), 'lineTotal', 'description');
 }
 
