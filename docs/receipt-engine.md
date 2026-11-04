@@ -1,7 +1,26 @@
 # TABLY receipt engine: assessment and redesign
 
-Status: milestone 4 done; the app now reads receipts with the new engine (`readReceipt`), which falls back to the old
+Status: milestone 4 done plus first real-receipt fixes; the app now reads receipts with the new engine (`readReceipt`), which falls back to the old
 reader only when that one adds up and the new one does not. Not yet tested on real held-out receipts.
+
+## First real-receipt feedback (Burak, 14 lines)
+
+The first scan of a receipt we had never seen showed three general gaps. Each was fixed as a rule, not for that receipt,
+and the synthetic generator gained a randomized layout with the same properties, so the evaluation can see them:
+
+- **A lone total label whose amount drifted onto the next line** (bigger type, amount to the right) took no amount, so
+  the total came out blank. A lone money label now takes the amount just beyond it in the reading direction.
+- **A name that wraps, with the quantity on its first line and the price on the second**, became an unreadable row
+  plus a fake item. When the table's lines start with a quantity, a line without one continues the line above, and
+  the table start extends upward over such a line.
+- **Amounts glued to a currency code** ("11,185.00EGP") are read as amounts.
+
+New synthetic layout "qty-wrap-big-total": 36% fully right before the fixes, 82% after. What remains in it is the
+deliberate scanner damage.
+
+Not resolved: the printed subtotal on that receipt (11,185.00) is 1,200.00 more than the 14 prices the scanner read,
+so some price or line is missing or misread. Without that scan's raw data the cause is unknown. The app still shows the
+mismatch rather than hiding it.
 
 ## Milestone 4: validation, confidence, review screen (stages F and G)
 

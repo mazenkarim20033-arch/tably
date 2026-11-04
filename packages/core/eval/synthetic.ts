@@ -38,6 +38,8 @@ interface Piece {
   right?: boolean;
   /** text size relative to normal */
   size?: number;
+  /** printed this many lines lower than the rest of its row (bigger type, a column printed slightly off) */
+  dy?: number;
 }
 type PrintedRow = Piece[];
 
@@ -293,6 +295,39 @@ const TEMPLATES: Record<string, (r: Rand) => Built> = {
     return { rows, truth: truthOf(items, sub, c), tags: ['ltr', 'bilingual', beside ? 'caption-beside' : 'caption-below'] };
   },
 
+  /**
+   * A quantity column; names that wrap with the price on the second line (which has no quantity); the total printed
+   * in bigger type with its amount drifting a fraction of a line below its label; amounts glued to a currency code.
+   */
+  'qty-wrap-big-total'(r) {
+    const suffix = pick(r, ['EGP', 'LE', '']);
+    const style = { commas: chance(r, 0.5), suffix: '', arabicDigits: false };
+    const fmt = (m: number) => money(m, r, style) + suffix;
+    const items = lines(r, 4 + Math.floor(r() * 8), [...DISHES, ...LONG_DISHES]);
+    const rows: PrintedRow[] = [];
+    header(r, rows, false);
+    for (const it of items) {
+      const words = it.name.split(' ');
+      const price: Piece = { text: fmt(it.qty * it.unit), x: 0.93, right: true };
+      if (words.length >= 3 && chance(r, 0.45)) {
+        const cut = 1 + Math.floor(r() * (words.length - 1));
+        rows.push([{ text: String(it.qty), x: 0.06 }, { text: words.slice(0, cut).join(' '), x: 0.14 }]);
+        rows.push([{ text: words.slice(cut).join(' '), x: 0.14 }, price]);
+      } else rows.push([{ text: String(it.qty), x: 0.06 }, { text: it.name, x: 0.14 }, price]);
+    }
+    const sub = items.reduce((s, i) => s + i.qty * i.unit, 0);
+    const c = charges(r, sub, false);
+    const summary = summaryRows(c, sub, fmt, false, { label: 0.15, value: 0.93 });
+    const last = summary[summary.length - 1]!;
+    // The total row: bigger type, and its amount printed a fraction of a line off.
+    last[0]!.size = 1.7;
+    last[1]!.size = 1.7;
+    if (chance(r, 0.7)) last[1]!.dy = 0.45 + r() * 0.4;
+    rows.push(...summary);
+    footer(r, rows, c.total, fmt);
+    return { rows, truth: truthOf(items, sub, c), tags: ['ltr', 'qty-column', 'wrapped', 'big-total', suffix ? 'glued-currency' : 'plain-amounts'] };
+  },
+
   /** Price printed before the name (some POS printers), quantity as "x2" at the end. */
   'price-first'(r) {
     const style = { commas: false, suffix: '', arabicDigits: false };
@@ -350,21 +385,21 @@ function render(rows: PrintedRow[], cam: Camera, r: Rand): { lines: OcrLine[]; r
       .map((p) => {
         const w = p.text.length * CHAR * (p.size ?? 1);
         const x0 = p.right ? p.x - w : p.x;
-        return { text: p.text, x0, x1: x0 + w, h: 0.014 * (p.size ?? 1) };
+        return { text: p.text, x0, x1: x0 + w, h: 0.014 * (p.size ?? 1), dy: p.dy };
       })
       .sort((a, b) => a.x0 - b.x0);
     // Vision returns close neighbours as one observation, sometimes.
     const groups: typeof placed[] = [];
     for (const p of placed) {
       const g = groups[groups.length - 1];
-      if (g && p.x0 - g[g.length - 1]!.x1 < 0.12 && chance(r, cam.merge)) g.push(p);
+      if (g && p.dy === undefined && g[g.length - 1]!.dy === undefined && p.x0 - g[g.length - 1]!.x1 < 0.12 && chance(r, cam.merge)) g.push(p);
       else groups.push([p]);
     }
     for (const g of groups) {
       const x0 = g[0]!.x0;
       const x1 = g[g.length - 1]!.x1;
       const h = Math.max(...g.map((p) => p.h));
-      const yTop = y + (r() * 2 - 1) * cam.jitter;
+      const yTop = y + (g[0]!.dy ?? 0) * pitch + (r() * 2 - 1) * cam.jitter;
       const corners = [map(x0, yTop), map(x1, yTop), map(x1, yTop + h), map(x0, yTop + h)];
       const xs = corners.map((c) => c[0]);
       const ys = corners.map((c) => c[1]);

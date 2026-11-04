@@ -101,6 +101,36 @@ describe('pairing on the reconstructed lines', () => {
     expect(reconcile(rc).status).toBe('ok');
   });
 
+  it('takes the amount of a total label whose amount drifted onto the next line, to its right', () => {
+    const r = page([
+      [['CAFE', 0.3]],
+      [['1', 0.05], ['Latte', 0.12], ['60.00EGP', -0.93]],
+      [['1', 0.05], ['Water', 0.12], ['20.00EGP', -0.93]],
+      [['Subtotal', 0.12], ['80.00EGP', -0.93]],
+      [['Total Due', 0.12]],
+      [['80.00EGP', -0.93]],
+    ]);
+    const rc = readReceipt(r);
+    expect(rc.total).toBe(8000);
+    expect(rc.notes.join(' ')).not.toMatch(/No total/);
+  });
+
+  it('joins a name that wraps when its second line has the price but no quantity', () => {
+    const r = page([
+      [['2', 0.05], ['WATER SMALL', 0.12], ['80.00', -0.9]],
+      [['1', 0.05], ['MIX PLATTER', 0.12], ['550.00', -0.9]],
+      [['1', 0.05], ['BELEN STYLE BEEF', 0.12]],
+      [['CASSEROLE', 0.12], ['1950.00', -0.9]],
+      [['1', 0.05], ['TRILECE', 0.12], ['325.00', -0.9]],
+      [['Subtotal', 0.3], ['2905.00', -0.9]],
+    ]);
+    const rc = readReceipt(r);
+    expect(rc.items.map((i) => [i.description, i.quantity, i.lineTotal])).toEqual([
+      ['WATER SMALL', 2, 8000], ['MIX PLATTER', 1, 55000], ['BELEN STYLE BEEF CASSEROLE', 1, 195000], ['TRILECE', 1, 32500],
+    ]);
+    expect(rc.unparsed).toEqual([]);
+  });
+
   it('keeps numbers inside a name in the name', () => {
     const r = page([
       [['Qty', 0.05], ['Description', 0.29], ['Price', 0.53], ['Total', 0.77]],

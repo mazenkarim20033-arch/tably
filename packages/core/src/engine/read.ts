@@ -10,7 +10,8 @@ import type { Layout, Line, Token } from './layout';
  * Every rule here is a general property of printed receipts, not of one shop:
  *  - A line's role comes from its words, checked from the most specific meaning to the least ("Total Qty" is a count
  *    before it is a total; "Tax Total" is tax). Punctuation inside words is ignored ("V.A.T" is "vat").
- *  - Labels printed above their values (a summary box) pair with the value under them, by horizontal overlap.
+ *  - Labels printed above their values (a summary box) pair with the value under them, by horizontal overlap; a lone
+ *    label whose amount drifted onto the next line takes the amount just beyond it.
  *  - In the item table, the line total is the amount column whose values are quantity x another column, else the
  *    column at the end of the reading direction (right for English, left for Arabic).
  *  - An item starts at the edge where item names start; an indented line continues the item above; a line in another
@@ -152,13 +153,16 @@ function interpret(input: OcrLine[], layout: Layout, opts: { attach: 'indent' | 
   let regionStart = first < 0 ? info.length : header >= 0 ? header + 1 : first;
   if (header < 0 && first > 0) {
     // No column header: the first item may begin on a text line above its priced line (a wrapped name). Such a line
-    // starts further out than the priced line and sits right above it.
+    // starts further out than the priced line (or starts with a quantity) and sits right above it.
     const edge = (l: LineInfo) => (l.script === 'arabic' ? -l.x1 : l.x0);
     for (let k = first - 1; k >= Math.max(0, first - 2); k--) {
       const l = info[k]!;
       const below = info[k + 1]!;
       const close = below.line.v - l.line.v < layout.textHeight * 2.6;
-      if (l.role !== 'text' || l.amounts.length > 0 || l.letters === 0 || !close || edge(l) > edge(info[first]!) - Math.max(0.015, layout.textHeight)) break;
+      // The first item may also start on a line with its quantity whose own priced continuation has none.
+      const startsWithQty = l.line.tokens[0]?.kind === 'integer' && info[first]!.line.tokens[0]?.kind !== 'integer';
+      const furtherOut = edge(l) > edge(info[first]!) - Math.max(0.015, layout.textHeight);
+      if (l.role !== 'text' || l.amounts.length > 0 || l.letters === 0 || !close || (furtherOut && !startsWithQty)) break;
       regionStart = k;
     }
   }
@@ -260,7 +264,9 @@ function interpret(input: OcrLine[], layout: Layout, opts: { attach: 'indent' | 
     }
     const price = lineTotalOf(l);
     if (price) {
-      const continues = last && last.price === null && (opts.attach === 'previous' || indent(l) > indentTol);
+      // When the lines of a table start with a quantity, a priced line with none is the rest of the line above.
+      const noQty = qtyCol >= 0 && !l.ints.some((t) => t.column === qtyCol) && l.letters > 0;
+      const continues = last && last.price === null && (opts.attach === 'previous' || indent(l) > indentTol || noQty);
       if (continues) {
         last.lines.push(l);
         last.price = price;
@@ -424,8 +430,12 @@ function interpret(input: OcrLine[], layout: Layout, opts: { attach: 'indent' | 
       const role = roleOf(phrase.text, false);
       if (!MONEY.includes(role)) continue;
       const mid = phrase.x + phrase.w / 2;
+      // The amount sits under the label, or (a label in bigger type often drifts off its row) just beyond the end of
+      // the label in the reading direction when it is the only money label on its line.
+      const onlyLabel = l.line.obs.filter((o) => MONEY.includes(roleOf(input[o]!.text, false))).length === 1;
+      const beyond = (t: Token) => onlyLabel && (rtl ? t.x + t.w <= phrase.x + 0.02 : t.x >= phrase.x + phrase.w - 0.02);
       const under = below.amounts
-        .filter((t) => !usedValues.has(t) && Math.abs(t.x + t.w / 2 - mid) < Math.max(0.08, phrase.w))
+        .filter((t) => !usedValues.has(t) && (Math.abs(t.x + t.w / 2 - mid) < Math.max(0.08, phrase.w) || beyond(t)))
         .sort((a, b) => Math.abs(a.x + a.w / 2 - mid) - Math.abs(b.x + b.w / 2 - mid))[0];
       if (under && under.value !== null) {
         usedValues.add(under);
