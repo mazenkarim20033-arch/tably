@@ -4,6 +4,7 @@ import {
   ApiError, cancelPayment, getPayment, markPaid, startPayment, type BillView, type Me, type PaymentDetails,
   type PaymentStatus, type PersonTotal,
 } from './api';
+import { Tick } from './ui';
 
 /** Plain-language status. "Paid" is shown only for verified payments. */
 export const STATUS_LABEL: Record<PaymentStatus | 'unpaid', string> = {
@@ -74,6 +75,7 @@ export function PayPanel({ token, me, bill, mine, onClose, onChanged }: {
 
         {status === 'verified' && (
           <>
+            <Tick tone="success" />
             <h2>Paid · confirmed</h2>
             <p className="sub">{payee?.name ?? 'The bill creator'} confirmed they received {formatAmount(mine.payment!.amount, cur)}. You are all set.</p>
           </>
@@ -81,6 +83,7 @@ export function PayPanel({ token, me, bill, mine, onClose, onChanged }: {
 
         {status === 'awaiting_confirmation' && (
           <>
+            <Tick tone="warning" />
             <h2>Waiting for confirmation</h2>
             <p className="sub">
               You said you sent {formatAmount(mine.payment!.amount, cur)}. This is <b>not confirmed yet</b>: it counts as paid only

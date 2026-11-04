@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { formatAmount } from '@tably/core';
 import { PayPanel, STATUS_LABEL, statusOf } from "./PayPanel";
+import { Av, Brand, niceDate } from './ui';
 import { ApiError, getBill, getVersion, join, setClaim, type BillItem, type BillView, type ClaimChange, type Me } from './api';
 
 const POLL_MS = 4000;
@@ -126,39 +127,76 @@ export function BillPage({ token }: { token: string }) {
   if (fatal) {
     return (
       <main className="page center">
-        <h1>{fatal.status === 410 ? 'This link has expired' : fatal.status === 403 ? 'This link is turned off' : 'Bill not found'}</h1>
-        <p className="sub">{fatal.status === 404 ? 'Check the link, or ask for a new one.' : fatal.message}</p>
+        <Brand />
+        <div className="empty">
+          <h1>{fatal.status === 410 ? 'This link has expired' : fatal.status === 403 ? 'This link is turned off' : 'Bill not found'}</h1>
+          <p className="sub">{fatal.status === 404 ? 'Check the link, or ask for a new one.' : fatal.message}</p>
+        </div>
       </main>
     );
   }
-  if (!bill) return <main className="page center"><p className="sub">Loading…</p></main>;
+  if (!bill) {
+    return (
+      <main className="page center" aria-busy="true">
+        <Brand />
+        <div className="skeleton" aria-hidden><span /><span /><span /></div>
+        <p className="sub" style={{ textAlign: 'center' }}>Loading the bill…</p>
+      </main>
+    );
+  }
 
   const cur = bill.currency;
   const mine = me ? bill.participants.find((p) => p.id === me.id) : undefined;
   const names = new Map(bill.participants.map((p) => [p.id, p.name]));
+  const closed = bill.status !== 'open';
 
   return (
     <>
       <main className="page">
-        {bill.date && <p className="eyebrow">{bill.date}</p>}
-        <h1>{bill.store}</h1>
-        <p className="sub">{me ? `Hi ${me.name}. Tap what you had.` : 'Enter your name to pick your items.'}</p>
+        <Brand right={bill.date ? <span className="chip">{niceDate(bill.date)}</span> : undefined} />
 
-        {!me && <NameForm onJoin={async (name) => {
-          const r = await join(token, name);
-          const m = { id: r.participant_id, token: r.participant_token, name: r.name };
-          saveMe(token, m);
-          // Load the bill that already includes this person before showing them as joined.
-          setBill(await getBill(token));
-          setMe(m);
-        }} />}
+        <section className="hero">
+          <p className="eyebrow">Split the bill</p>
+          <h1>{bill.store}</h1>
+          <div className="hero-row">
+            <span className="hero-total">{formatAmount(bill.totals.total, cur)}</span>
+            <span className="hero-meta">{bill.items.length} {bill.items.length === 1 ? 'item' : 'items'}</span>
+          </div>
+          {bill.participants.length > 0 && (
+            <div className="faces">
+              <span className="stack">{bill.participants.slice(0, 5).map((p) => <Av key={p.id} name={p.name} size={26} />)}</span>
+              <span className="hero-meta">
+                {bill.participants.length <= 3
+                  ? bill.participants.map((p) => p.name).join(', ')
+                  : `${bill.participants.slice(0, 2).map((p) => p.name).join(', ')} and ${bill.participants.length - 2} more`} joined
+              </span>
+            </div>
+          )}
+        </section>
 
-        <section className="items" aria-label="Receipt items">
+        {!me && closed ? (
+          <p className="note">This bill is closed.</p>
+        ) : !me ? (
+          <NameForm onJoin={async (name) => {
+            const r = await join(token, name);
+            const m = { id: r.participant_id, token: r.participant_token, name: r.name };
+            saveMe(token, m);
+            // Load the bill that already includes this person before showing them as joined.
+            setBill(await getBill(token));
+            setMe(m);
+          }} />
+        ) : (
+          <p className="greet">Hi {me.name} <span aria-hidden>👋</span> Tap what you had.</p>
+        )}
+
+        <h2 className="section">Items</h2>
+        <section className={'items' + (!me ? ' locked' : '')} aria-label="Receipt items">
           {bill.items.map((i) => (
             <ItemRow key={i.id} item={i} cur={cur} names={names} meId={me?.id} disabled={!me || bill.status !== 'open'} onChange={(c) => change(i, c)} />
           ))}
         </section>
 
+        <h2 className="section">Totals</h2>
         <div className="totals">
           {bill.totals.discounts !== 0 && <div><span>Discounts</span><span>{formatAmount(bill.totals.discounts, cur)}</span></div>}
           {bill.totals.service > 0 && <div><span>Service</span><span>{formatAmount(bill.totals.service, cur)}</span></div>}
@@ -211,7 +249,7 @@ function NameForm({ onJoin }: { onJoin: (name: string) => Promise<void> }) {
   const [working, setWorking] = useState(false);
   return (
     <form
-      className="join"
+      className="joincard"
       onSubmit={async (e) => {
         e.preventDefault();
         setWorking(true);
@@ -220,8 +258,10 @@ function NameForm({ onJoin }: { onJoin: (name: string) => Promise<void> }) {
         setWorking(false);
       }}
     >
+      <h2>Who are you?</h2>
+      <p className="sub">Add your name, then tap the items you had. Everyone sees who picked what.</p>
       <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" maxLength={40} autoComplete="given-name" aria-label="Your name" />
-      <button type="submit" disabled={working || name.trim() === ''}>Join</button>
+      <button type="submit" className="primary-btn" disabled={working || name.trim() === ''}>{working ? 'Joining…' : 'Join and pick items'}</button>
       {err && <p className="error">{err}</p>}
     </form>
   );
@@ -240,15 +280,19 @@ function ItemRow({ item, cur, names, meId, disabled, onChange }: {
   const nameOf = (id: string) => names.get(id) ?? "?";
 
   const holders = [
-    ...others.filter((c) => !c.shared).map((c) => nameOf(c.participant_id) + (item.quantity > 1 ? " ×" + c.units : "")),
-    ...(otherSharers.length ? ["split: " + otherSharers.map((c) => nameOf(c.participant_id)).join(", ")] : []),
-  ].join(" · ");
+    ...others.filter((c) => !c.shared).map((c) => ({ name: nameOf(c.participant_id), text: nameOf(c.participant_id) + (item.quantity > 1 ? " ×" + c.units : "") })),
+    ...otherSharers.map((c) => ({ name: nameOf(c.participant_id), text: nameOf(c.participant_id) + " (split)" })),
+  ];
 
   const price = <span className="price">{formatAmount(item.line_total, cur)}</span>;
   const label = (
     <span className="name">
-      {item.quantity > 1 ? item.quantity + " × " : ""}{item.description}
-      {holders && <small className="holders">{holders}</small>}
+      <span className="title">{item.quantity > 1 ? item.quantity + " × " : ""}{item.description}</span>
+      {holders.length > 0 && (
+        <small className="holders">
+          {holders.map((h) => <span key={h.text} className="holder"><Av name={h.name} size={18} />{h.text}</span>)}
+        </small>
+      )}
     </span>
   );
   const pill = (
@@ -267,7 +311,7 @@ function ItemRow({ item, cur, names, meId, disabled, onChange }: {
       else onChange({ share: true }); // the item is already being split, so tapping joins the split
     };
     return (
-      <div className="item">
+      <div className={'item' + (selected ? ' on' : '')}>
         <button className="pick" aria-pressed={selected} disabled={disabled || (!selected && !canTake && !canShare)} onClick={tap}>
           <span className="check" />
           {label}
@@ -279,7 +323,7 @@ function ItemRow({ item, cur, names, meId, disabled, onChange }: {
   }
   const max = Math.max(maxUnits, mineUnits);
   return (
-    <div className="item multi">
+    <div className={'item multi' + (mineUnits > 0 || mineShared ? ' on' : '')}>
       <span className="check" aria-hidden data-on={mineUnits > 0 || mineShared} />
       {label}
       {price}
@@ -298,21 +342,32 @@ function ItemRow({ item, cur, names, meId, disabled, onChange }: {
 function Progress({ bill }: { bill: BillView }) {
   const pct = bill.totals.total ? Math.round((bill.totals.assigned / bill.totals.total) * 100) : 0;
   return (
-    <div className="progress">
-      <div className="track"><div className="fill" style={{ width: `${pct}%` }} /></div>
-      <p>
+    <section className="progress">
+      <h2 className="section">Who has what</h2>
+      <div className="track" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}><div className="fill" style={{ width: `${pct}%` }} /></div>
+      <p className="claimed">
         {bill.totals.unassigned === 0
           ? 'Everything is claimed.'
           : `${formatAmount(bill.totals.unassigned, bill.currency)} still unclaimed`}
       </p>
-      {bill.totals.collected > 0 && <p>{formatAmount(bill.totals.collected, bill.currency)} confirmed paid of {formatAmount(bill.totals.total, bill.currency)}</p>}
+      {bill.totals.collected > 0 && <p className="claimed">{formatAmount(bill.totals.collected, bill.currency)} confirmed paid of {formatAmount(bill.totals.total, bill.currency)}</p>}
       {bill.participants.length > 0 && (
         <ul className="people">
           {bill.participants.map((p) => (
-            <li key={p.id}><span>{p.name}{p.payment && <small className={"st st-" + p.payment.status}>{" · " + STATUS_LABEL[statusOf(p)]}</small>}{p.adjustment !== 0 && <small className="adj">{p.adjustment > 0 ? " covers " + formatAmount(p.adjustment, bill.currency) + " for others" : " · " + formatAmount(-p.adjustment, bill.currency) + " covered"}</small>}</span><span>{formatAmount(p.total, bill.currency)}</span></li>
+            <li key={p.id}>
+              <Av name={p.name} size={34} />
+              <span className="who">
+                <b>{p.name}</b>
+                <span className="subline">
+                  {p.payment ? <span className={"badge st-" + p.payment.status}>{STATUS_LABEL[statusOf(p)]}</span> : <span className="badge st-none">Not paid</span>}
+                  {p.adjustment !== 0 && <small className="adj">{p.adjustment > 0 ? "covers " + formatAmount(p.adjustment, bill.currency) + " for others" : formatAmount(-p.adjustment, bill.currency) + " covered"}</small>}
+                </span>
+              </span>
+              <span className="amt">{formatAmount(p.total, bill.currency)}</span>
+            </li>
           ))}
         </ul>
       )}
-    </div>
+    </section>
   );
 }
