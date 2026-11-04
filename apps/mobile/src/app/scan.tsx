@@ -3,7 +3,7 @@ import { ActivityIndicator, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { parseReceipt } from '@tably/core';
+import { readReceipt } from '@tably/core';
 import { Button } from '../components/Button';
 import { useTheme } from '../theme/ThemeProvider';
 import { isOcrAvailable, recognizeText } from '../../modules/tably-vision';
@@ -21,7 +21,7 @@ export default function Scan() {
       await startDraft(uri);
       try {
         const result = await recognizeText(uri);
-        updateDraft({ ocr: result.lines, ocrSize: { width: result.width, height: result.height }, receipt: parseReceipt(result.lines) });
+        updateDraft({ ocr: result.lines, ocrSize: { width: result.width, height: result.height }, receipt: readReceipt(result.lines) });
       } catch (e) {
         // Keep the photo and let the user type the receipt in; never fake a result.
         updateDraft({ ocrError: e instanceof Error ? e.message : 'Text recognition failed.' });

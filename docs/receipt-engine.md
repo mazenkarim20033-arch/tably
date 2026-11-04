@@ -1,7 +1,7 @@
 # TABLY receipt engine: assessment and redesign
 
-Status: milestone 4 done (disputed fields, reasons and choices, review screen). The app still runs the old reader,
-which now gets the same arithmetic checks; the new engine is switched on once it is tested on real receipts.
+Status: milestone 4 done; the app now reads receipts with the new engine (`readReceipt`), which falls back to the old
+reader only when that one adds up and the new one does not. Not yet tested on real held-out receipts.
 
 ## Milestone 4: validation, confidence, review screen (stages F and G)
 
