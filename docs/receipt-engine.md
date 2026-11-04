@@ -1,7 +1,41 @@
 # TABLY receipt engine: assessment and redesign
 
-Status: milestone 3 done (meaning and pairing in `packages/core/src/engine/read.ts`). The app still uses the old
-reader; it switches once the new engine beats it on real held-out receipts.
+Status: milestone 4 done (disputed fields, reasons and choices, review screen). The app still runs the old reader,
+which now gets the same arithmetic checks; the new engine is switched on once it is tested on real receipts.
+
+## Milestone 4: validation, confidence, review screen (stages F and G)
+
+- **What a disputed field carries:** the path in `uncertain`, a few plain words in `reasons`, and one-tap values in
+  `choices` (items) or `fieldChoices` (totals). Nothing is applied automatically, and editing a field clears all three.
+- **Rules,** shared by both readers unless noted:
+  - Several prices that a single misread digit could explain each get that value as a choice, up to three. The old
+    behaviour was a note only.
+  - When the printed subtotal plus charges does not equal the printed total, each one-digit fix of one of those
+    numbers is offered on its field.
+  - A charge printed with its rate ("Service 12%") must be that share of its base, within one pound. If it is not,
+    it is flagged. *(new engine)*
+  - Quantity × unit price that is one misread digit away from the line total is offered on the price. *(new engine)*
+  - A runner-up scanner reading about as confident as the chosen one becomes a choice. *(new engine)*
+  - Equally good readings that disagree offer each other's value on the disputed line. *(new engine)*
+- **Review screen:**
+  - the reason under a disputed field, and "Use …" buttons for each choice, on items and on totals
+  - the old single "Use 60.00" suggestion is one of those choices
+  - "Retake photo", with a confirmation before edits are lost
+
+On the synthetic holdout, milestone 3 against milestone 4 on the same 400 receipts:
+
+| | milestone 3 | milestone 4 |
+|---|---|---|
+| wrong fields that are flagged | 42.9% | 53.6% |
+| flags that point at a real error | 56.3% | 44.1% |
+| silent wrong fields | 48 | 39 |
+
+- **Trade-off:** more errors are caught at the cost of more false alarms. The largest source of false alarms is a
+  quantity read from a number before the name ("2 Chocolate Fudge…"), which is genuinely ambiguous ("7 Up"), so it
+  stays flagged.
+- **Generator fix:** labels printed a rate that differed from the one charged ("Service 12%" on a 10% charge). That
+  changed the synthetic set, so the baseline was re-measured (old reader: 38% exact, 1,318 silent wrong fields).
+  Milestone 3's 88.8% was on the earlier set; on this set it is 85.8%, the same as milestone 4.
 
 ## Milestone 3: meaning and pairing (stages D and E)
 

@@ -1,5 +1,5 @@
 import type { Minor } from './money';
-import type { ReceiptItem } from './receipt';
+import type { ReceiptItem, TotalField } from './receipt';
 
 /**
  * Stage F: the receipt's own arithmetic, shared by every reader. It checks and explains; it never changes a printed
@@ -20,6 +20,20 @@ export function dropFreeLines(items: ReceiptItem[], uncertain: string[], notes: 
   }
 
 }
+
+/** Where findings are recorded: the paths to review, a short reason for each, and one-tap choices for totals. */
+export interface Marks {
+  uncertain: string[];
+  reasons: Record<string, string>;
+  fieldChoices: Partial<Record<TotalField, Minor[]>>;
+}
+
+export function mark(m: Marks, path: string, reason: string): void {
+  if (!m.uncertain.includes(path)) m.uncertain.push(path);
+  if (!m.reasons[path]) m.reasons[path] = reason;
+}
+
+const money = (v: Minor) => (v / 100).toFixed(2);
 
 export interface Settled {
   total: Minor | null;
@@ -42,8 +56,14 @@ export function settleArithmetic(input: {
   uncertain: string[];
   /** amounts the reader saw in the item area but could not tie to a name */
   loosePrices?: Minor[];
+  /** where reasons and choices for disputed fields go (optional for readers that do not show them) */
+  reasons?: Record<string, string>;
+  fieldChoices?: Partial<Record<TotalField, Minor[]>>;
+  /** percentages printed next to a charge ("Service 12%"), to check the amount against */
+  rates?: Partial<Record<'tax' | 'service', number>>;
 }): Settled {
   const { items, totals, discounts, notes, uncertain } = input;
+  const m: Marks = { uncertain, reasons: input.reasons ?? {}, fieldChoices: input.fieldChoices ?? {} };
   const loosePrices = input.loosePrices ?? [];
   let total = input.total;
   const extras = (totals.tax ?? 0) + (totals.service ?? 0) + (totals.tip ?? 0);
@@ -87,6 +107,16 @@ export function settleArithmetic(input: {
         }
       } else if (misreads.length + suspects.length > 0) {
         notes.push('The items do not add up to the subtotal and more than one price could be the cause. Check them against the receipt.');
+        // Say which prices: each one that a single misread digit would explain, with that value as a choice. With
+        // more than three candidates the note alone is more useful than a screen full of warnings.
+        const byItem = new Map<ReceiptItem, Minor[]>();
+        for (const f of findMisreads(items, targets)) byItem.set(f.item, [...(byItem.get(f.item) ?? []), f.value]);
+        if (byItem.size <= 3) {
+          for (const [item, values] of byItem) {
+            item.choices = [...new Set([...(item.choices ?? []), ...values])];
+            mark(m, `items.${item.id}.lineTotal`, 'The items do not add up. This price may be misread.');
+          }
+        }
       }
     }
   }
@@ -110,6 +140,9 @@ export function settleArithmetic(input: {
     }
   }
 
+  if (input.total !== null && totals.subtotal !== undefined && !taxIncluded) checkChain(totals, input.total, discounts, m);
+  if (input.rates) checkRates(totals, sumOf(), discounts, input.rates, m);
+
   // Prices the scanner saw inside the table but could not tie to a name.
   const sum = sumOf();
   const target = targets[0];
@@ -120,6 +153,62 @@ export function settleArithmetic(input: {
   }
 
   return { total, taxIncluded, arith };
+}
+
+/**
+ * The printed subtotal plus the printed charges should be the printed total. When they are not, each single-digit
+ * misreading of one of those numbers that would make them agree is offered on that field (up to three fields).
+ */
+function checkChain(totals: Charges, total: Minor, discounts: Minor, m: Marks): void {
+  const fields: Array<[TotalField, Minor]> = (['subtotal', 'tax', 'service', 'tip'] as const)
+    .filter((k) => totals[k] !== undefined)
+    .map((k) => [k, totals[k]!] as [TotalField, Minor]);
+  const sumWith = (f: TotalField | null, v: Minor) =>
+    fields.reduce((s, [k, x]) => s + (k === f ? v : x), 0) + discounts;
+  if (sumWith(null, 0) === total) return;
+  const fixes: Array<[TotalField, Minor]> = [];
+  for (const [k, x] of fields) for (const v of digitVariants(x)) if (sumWith(k, v) === total) fixes.push([k, v]);
+  for (const v of digitVariants(total)) if (sumWith(null, 0) === v) fixes.push(['total', v]);
+  const fieldsHit = new Set(fixes.map((f) => f[0]));
+  if (fixes.length === 0 || fieldsHit.size > 3) return;
+  for (const [k, v] of fixes) {
+    m.fieldChoices[k] = [...new Set([...(m.fieldChoices[k] ?? []), v])];
+    mark(m, k, 'The subtotal and charges do not add up to the total. This amount may be misread.');
+  }
+}
+
+/**
+ * A charge printed with its rate ("VAT 14%") should be that share of what it applies to: the subtotal, after any
+ * discount, plus the service charge when tax is charged on service. Rounding differs between shops, so up to one
+ * pound either way counts as a match.
+ */
+function checkRates(totals: Charges, itemsSum: Minor, discounts: Minor, rates: Partial<Record<'tax' | 'service', number>>, m: Marks): void {
+  const sub = totals.subtotal ?? itemsSum;
+  for (const key of ['service', 'tax'] as const) {
+    const rate = rates[key];
+    const value = totals[key];
+    if (!rate || value === undefined || value === 0) continue;
+    const bases = [sub, sub + discounts, sub + discounts + (key === 'tax' ? (totals.service ?? 0) : 0)];
+    const fits = (v: Minor) => bases.some((b) => Math.abs(Math.round((b * rate) / 100) - v) <= 100);
+    if (fits(value)) continue;
+    const fixes = digitVariants(value).filter(fits);
+    if (fixes.length) m.fieldChoices[key] = [...new Set([...(m.fieldChoices[key] ?? []), ...fixes])];
+    mark(m, key, `This is not ${rate}% of the subtotal. Check it against the receipt${fixes.length ? '' : ` (${rate}% would be about ${money(Math.round((bases[bases.length - 1]! * rate) / 100))})`}.`);
+  }
+}
+
+/** Every number one commonly-confused digit away from v. */
+export function digitVariants(v: Minor): Minor[] {
+  if (v <= 0) return [];
+  const digits = String(v).split('');
+  const out = new Set<Minor>();
+  digits.forEach((d, pos) => {
+    for (const alt of CONFUSABLE[d] ?? []) {
+      const c = Number([...digits.slice(0, pos), alt, ...digits.slice(pos + 1)].join(''));
+      if (c > 0) out.add(c);
+    }
+  });
+  return [...out];
 }
 
 /** What the items should add up to: the printed subtotal, else the total minus its charges. */

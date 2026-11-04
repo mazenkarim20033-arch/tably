@@ -1,11 +1,12 @@
 import type { Minor } from './money';
-import type { Receipt, ReceiptItem } from './receipt';
+import type { Receipt, ReceiptItem, TotalField } from './receipt';
 
 /** Pure edit helpers. A field the user touches counts as confirmed, so it leaves `uncertain`. */
 
 export function confirm(r: Receipt, ...paths: string[]): Receipt {
   const gone = new Set(paths);
-  return { ...r, uncertain: r.uncertain.filter((p) => !gone.has(p)) };
+  const reasons = r.reasons ? Object.fromEntries(Object.entries(r.reasons).filter(([p]) => !gone.has(p))) : undefined;
+  return { ...r, uncertain: r.uncertain.filter((p) => !gone.has(p)), ...(reasons ? { reasons } : {}) };
 }
 
 export function emptyReceipt(): Receipt {
@@ -44,6 +45,7 @@ export function setItemLineTotal(r: Receipt, id: string, lineTotal: Minor | null
     // Any edit settles the doubt about this price, so the suggestion and its flags go away.
     suggestedLineTotal: undefined,
     altLineTotals: undefined,
+    choices: undefined,
     flags: i.flags.filter((f) => !['price-unreadable', 'unit-price-unknown', 'low-ocr-confidence', 'maybe-misread', 'does-not-add-up'].includes(f)),
   }), 'lineTotal', 'description');
 }
@@ -62,7 +64,9 @@ export function removeItem(r: Receipt, id: string): Receipt {
 export type HeaderField = 'merchant' | 'date' | 'currency' | 'discounts' | 'subtotal' | 'tax' | 'service' | 'tip' | 'total';
 
 export function setField<K extends HeaderField>(r: Receipt, key: K, value: Receipt[K]): Receipt {
-  return confirm({ ...r, [key]: value }, key);
+  const fieldChoices = r.fieldChoices ? { ...r.fieldChoices } : undefined;
+  if (fieldChoices) delete fieldChoices[key as TotalField];
+  return confirm({ ...r, [key]: value, ...(fieldChoices ? { fieldChoices } : {}) }, key);
 }
 
 export function setTaxIncluded(r: Receipt, taxIncluded: boolean): Receipt {

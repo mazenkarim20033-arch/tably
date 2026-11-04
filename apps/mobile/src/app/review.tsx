@@ -84,9 +84,43 @@ export default function Review() {
   const rec = reconcile(r);
   const edit = (next: Receipt) => updateDraft({ receipt: next });
   const flagged = (path: string) => r.uncertain.includes(path);
+  // A disputed field: why, in a few words, and the values the evidence supports as one-tap choices.
+  const dispute = (path: string, current: number | null, choices: number[] | undefined, use: (v: number) => void) => {
+    const reason = r.reasons?.[path];
+    const options = [...new Set(choices ?? [])].filter((v) => v !== current);
+    if (!flagged(path) || (!reason && options.length === 0)) return null;
+    return (
+      <View style={{ gap: 6 }}>
+        {reason && <Text style={{ color: colors.warning, fontSize: 13 }}>{reason}</Text>}
+        {options.length > 0 && (
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            {options.map((v) => (
+              <Pressable
+                key={v}
+                accessibilityRole="button"
+                onPress={() => use(v)}
+                style={{ paddingVertical: 8, paddingHorizontal: 16, borderRadius: radius.pill, backgroundColor: colors.accent }}
+              >
+                <Text style={{ color: colors.accentText, fontWeight: '600' }}>Use {formatAmount(v, r.currency)}</Text>
+              </Pressable>
+            ))}
+          </View>
+        )}
+      </View>
+    );
+  };
   const money = (k: Exclude<HeaderField, 'merchant' | 'date' | 'currency'>, label: string) => (
-    <AmountField label={label} value={r[k]} uncertain={flagged(k)} onChange={(v) => edit(setField(r, k, k === 'discounts' ? (v === null ? 0 : -Math.abs(v)) : v))} />
+    <View style={{ gap: 6 }}>
+      <AmountField label={label} value={r[k]} uncertain={flagged(k)} onChange={(v) => edit(setField(r, k, k === 'discounts' ? (v === null ? 0 : -Math.abs(v)) : v))} />
+      {k !== 'discounts' && dispute(k, r[k], r.fieldChoices?.[k], (v) => edit(setField(r, k, v)))}
+    </View>
   );
+  const retake = () => {
+    Alert.alert('Retake the photo?', 'Your changes to this receipt will be lost.', [
+      { text: 'Keep editing', style: 'cancel' },
+      { text: 'Retake', style: 'destructive', onPress: () => router.replace('/scan') },
+    ]);
+  };
   const banner =
     rec.status === 'ok' ? { c: colors.success, t: rec.message }
     : rec.status === 'mismatch' ? { c: colors.danger, t: `${rec.message} Difference ${formatAmount(rec.difference ?? 0, r.currency)}.` }
@@ -105,6 +139,11 @@ export default function Review() {
             <Text style={{ color: colors.accent, fontWeight: '600' }}>{showImage ? 'Hide original receipt' : 'Show original receipt'}</Text>
             {showImage && <Image source={{ uri: draft.imageUri }} resizeMode="contain" style={{ width: '100%', height: 420, marginTop: 8, borderRadius: radius.md }} />}
           </Pressable>
+        )}
+        {!draft.editBillId && (
+          <Text accessibilityRole="button" onPress={retake} style={{ color: colors.accent, fontWeight: '600' }}>
+            {draft.imageUri ? 'Retake photo' : 'Scan a receipt instead'}
+          </Text>
         )}
 
         <View style={{ borderLeftWidth: 3, borderLeftColor: banner.c, paddingLeft: 12 }}>
@@ -141,19 +180,19 @@ export default function Review() {
         {r.items.map((i) => (
           <View key={i.id} style={{ backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, borderRadius: radius.md, padding: space.md, gap: space.sm }}>
             <TextField value={i.description} onChange={(v) => edit(setItemDescription(r, i.id, v))} placeholder="Item" />
-            {i.suggestedLineTotal !== undefined && i.suggestedLineTotal !== i.lineTotal && (
-              <View style={{ gap: 6 }}>
-                <Text style={{ color: colors.warning, fontSize: 13 }}>
-                  The items only add up to the receipt if this price is {formatAmount(i.suggestedLineTotal, r.currency)}. The scanner may have misread a digit. Check the photo.
-                </Text>
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => edit(setItemLineTotal(r, i.id, i.suggestedLineTotal!))}
-                  style={{ alignSelf: 'flex-start', paddingVertical: 8, paddingHorizontal: 16, borderRadius: radius.pill, backgroundColor: colors.accent }}
-                >
-                  <Text style={{ color: colors.accentText, fontWeight: '600' }}>Use {formatAmount(i.suggestedLineTotal, r.currency)}</Text>
-                </Pressable>
-              </View>
+            {i.suggestedLineTotal !== undefined && i.suggestedLineTotal !== i.lineTotal && !r.reasons?.[`items.${i.id}.lineTotal`] && (
+              <Text style={{ color: colors.warning, fontSize: 13 }}>
+                The items only add up to the receipt if this price is {formatAmount(i.suggestedLineTotal, r.currency)}. The scanner may have misread a digit. Check the photo.
+              </Text>
+            )}
+            {dispute(
+              `items.${i.id}.lineTotal`,
+              i.lineTotal,
+              [...(i.suggestedLineTotal !== undefined ? [i.suggestedLineTotal] : []), ...(i.choices ?? [])],
+              (v) => edit(setItemLineTotal(r, i.id, v)),
+            )}
+            {flagged(`items.${i.id}.quantity`) && r.reasons?.[`items.${i.id}.quantity`] && r.reasons[`items.${i.id}.quantity`] !== r.reasons[`items.${i.id}.lineTotal`] && (
+              <Text style={{ color: colors.warning, fontSize: 13 }}>{r.reasons[`items.${i.id}.quantity`]}</Text>
             )}
             {i.flags.includes('does-not-add-up') && (
               <Text style={{ color: colors.warning, fontSize: 13 }}>

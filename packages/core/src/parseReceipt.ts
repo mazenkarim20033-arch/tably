@@ -857,8 +857,10 @@ export function parseWithSlope(clean: OcrLine[], slope: number): { receipt: Rece
     .filter(({ r, i }) => i >= tableStart && i < tableEnd && classes[i] === 'item' && isAmountOnly(r.text))
     .map(({ r }) => splitAmounts(r.text).values[0])
     .filter((v): v is Minor => v !== null && v !== undefined);
+  const reasons: Record<string, string> = {};
+  const fieldChoices: NonNullable<Receipt['fieldChoices']> = {};
   const { total, taxIncluded, arith } = settleArithmetic({
-    items, totals, total: chosen ? chosen.value : null, discounts, notes, uncertain, loosePrices,
+    items, totals, total: chosen ? chosen.value : null, discounts, notes, uncertain, loosePrices, reasons, fieldChoices,
   });
 
   const receipt: Receipt = {
@@ -876,6 +878,8 @@ export function parseWithSlope(clean: OcrLine[], slope: number): { receipt: Rece
     uncertain,
     unparsed: unparsed.slice(0, 8),
     notes,
+    reasons,
+    fieldChoices,
   };
 
   // How believable this reading is. Arithmetic that works out is strong evidence that prices were paired with the

@@ -81,15 +81,18 @@ function lines(r: Rand, n: number, pool: readonly string[]): Line[] {
 
 /** Charges printed under the table, with consistent arithmetic. */
 function charges(r: Rand, sub: number, rtl: boolean) {
-  const discount = chance(r, 0.2) ? -Math.round(sub * pick(r, [0.05, 0.1, 0.15])) : 0;
-  const service = chance(r, 0.6) ? Math.round((sub + discount) * pick(r, [0.1, 0.12])) : 0;
+  // A rate printed in a label is the rate charged.
+  const discountRate = pick(r, [5, 10, 15]);
+  const serviceRate = pick(r, [10, 12]);
+  const discount = chance(r, 0.2) ? -Math.round((sub * discountRate) / 100) : 0;
+  const service = chance(r, 0.6) ? Math.round(((sub + discount) * serviceRate) / 100) : 0;
   const tax = chance(r, 0.75) ? Math.round((sub + discount + service) * 0.14) : 0;
   const tip = chance(r, 0.1) ? pick(r, [1000, 2000, 5000]) : 0;
   const total = sub + discount + service + tax + tip;
   const label = {
     subtotal: rtl ? pick(r, ['الاجمالي الفرعي', 'المجموع الفرعي']) : pick(r, ['Subtotal', 'Sub Total', 'SUB-TOTAL', 'Net Amount']),
-    discount: rtl ? 'خصم' : pick(r, ['Discount', 'Promo', 'Disc 10%']),
-    service: rtl ? 'خدمة' : pick(r, ['Service', 'Service Charge 12%', 'Svc Chg', 'Service 12%']),
+    discount: rtl ? 'خصم' : pick(r, ['Discount', 'Promo', `Disc ${discountRate}%`]),
+    service: rtl ? 'خدمة' : pick(r, ['Service', `Service Charge ${serviceRate}%`, 'Svc Chg', `Service ${serviceRate}%`]),
     tax: rtl ? pick(r, ['ضريبة القيمة المضافة', 'ضريبة']) : pick(r, ['VAT 14%', 'Tax', 'V.A.T', 'Sales Tax']),
     tip: rtl ? 'بقشيش' : pick(r, ['Tip', 'Gratuity']),
     total: rtl ? pick(r, ['الاجمالي', 'المطلوب']) : pick(r, ['Total', 'TOTAL', 'Total Due', 'Amount Due', 'Grand Total']),

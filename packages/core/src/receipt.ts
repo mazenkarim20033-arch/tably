@@ -59,7 +59,14 @@ export interface ReceiptItem {
   suggestedLineTotal?: Minor;
   /** Other prices the recognizer thought this line could be (used to explain an arithmetic mismatch). */
   altLineTotals?: Minor[];
+  /**
+   * Other line totals the evidence supports (a runner-up reading, a rival interpretation, a one-digit fix), offered
+   * as one-tap choices when this price is disputed. Never applied automatically.
+   */
+  choices?: Minor[];
 }
+
+export type TotalField = 'subtotal' | 'tax' | 'service' | 'tip' | 'total';
 
 /** Dotted paths the user should double-check, e.g. "merchant", "total", "items.i3.lineTotal". */
 export type Uncertain = string[];
@@ -84,6 +91,10 @@ export interface Receipt {
   unparsed: string[];
   /** Plain-language notes about what the parser inferred ("No total line; calculated from the subtotal"). */
   notes: string[];
+  /** One-tap choices for disputed totals, like `ReceiptItem.choices`. */
+  fieldChoices?: Partial<Record<TotalField, Minor[]>>;
+  /** Why a field in `uncertain` needs a look, in a few plain words, keyed by the same path. */
+  reasons?: Record<string, string>;
 }
 
 export type ReconciliationStatus = 'ok' | 'mismatch' | 'incomplete';

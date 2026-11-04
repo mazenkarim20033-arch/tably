@@ -1,7 +1,7 @@
 import { type Minor, normalizeDigits, parseAmount } from '../money';
 import type { ItemFlag, OcrLine, Receipt, ReceiptItem } from '../receipt';
 import { detectCurrency, detectDate, detectMerchant, normalizeArabic } from '../parseReceipt';
-import { dropFreeLines, settleArithmetic, type Settled } from '../arithmetic';
+import { digitVariants, dropFreeLines, mark, settleArithmetic, type Marks, type Settled } from '../arithmetic';
 import type { Layout, Line, Token } from './layout';
 
 /**
@@ -115,7 +115,7 @@ function describeLines(layout: Layout, decimalStyle: boolean): LineInfo[] {
   });
 }
 
-interface Record {
+interface ItemRecord {
   lines: LineInfo[];
   price: Token | null;
   unit: Token | null;
@@ -137,6 +137,8 @@ function interpret(input: OcrLine[], layout: Layout, opts: { attach: 'indent' | 
   const uncertain: string[] = [];
   const notes: string[] = [];
   const unparsed: string[] = [];
+  const marks: Marks = { uncertain, reasons: {}, fieldChoices: {} };
+  const rates: Partial<Record<'tax' | 'service', number>> = {};
 
   // ---- regions -------------------------------------------------------------------------------------------------
   const header = info.findIndex((l, k) => l.role === 'header' && info.slice(k + 1, k + 4).some((n) => n.role === 'text' && n.amounts.length > 0));
@@ -237,8 +239,8 @@ function interpret(input: OcrLine[], layout: Layout, opts: { attach: 'indent' | 
   const indent = (l: LineInfo) => (rtl ? base(l.line.v) - edgeOf(l) : edgeOf(l) - base(l.line.v));
   const indentTol = Math.max(0.015, layout.textHeight);
 
-  const records: Record[] = [];
-  const newRecord = (l: LineInfo, price: Token | null): Record => ({ lines: [l], price, unit: null, qty: null, qtySource: null, consumed: new Set(price ? [price] : []) });
+  const records: ItemRecord[] = [];
+  const newRecord = (l: LineInfo, price: Token | null): ItemRecord => ({ lines: [l], price, unit: null, qty: null, qtySource: null, consumed: new Set(price ? [price] : []) });
   const leftovers: LineInfo[] = [];
   for (const l of region) {
     if (l.role === 'meta' || l.role === 'count' || l.role === 'header') continue;
@@ -299,6 +301,9 @@ function interpret(input: OcrLine[], layout: Layout, opts: { attach: 'indent' | 
       r.qty = Number(normalizeDigits(colQty.text).replace(',', '.'));
       r.qtySource = 'column';
       r.consumed.add(colQty);
+      // "3 x Name": the multiplication sign after the quantity belongs to it, not to the name.
+      const after = firstLine.line.tokens[firstLine.line.tokens.indexOf(colQty) + 1];
+      if (after && TIMES.test(after.text)) r.consumed.add(after);
     }
     const nameToks = orderedNameTokens(r, rtl).filter((t) => !r.consumed.has(t));
     if (r.qty === null && nameToks.length >= 2) {
@@ -353,14 +358,30 @@ function interpret(input: OcrLine[], layout: Layout, opts: { attach: 'indent' | 
     }
     const obsConf = input[r.price.obs]?.confidence ?? 1;
     if (obsConf < 0.6) flags.push('low-ocr-confidence');
-    const alts = alternatesOf(input, layout, r.price).filter((v) => v !== total);
+    const alts = alternatesOf(input, layout, r.price).filter((a) => a.value !== total);
+    // A runner-up reading nearly as sure as the chosen one means the scanner itself could not decide.
+    const close = alts.filter((a) => obsConf < 0.6 || a.confidence >= obsConf * 0.85);
     const id = `i${nextId++}`;
     items.push({
       id, description, quantity: qty, unitPrice, lineTotal: total, confidence: obsConf, flags,
-      ...(alts.length ? { altLineTotals: alts } : {}),
+      ...(alts.length ? { altLineTotals: alts.map((a) => a.value) } : {}),
+      ...(close.length ? { choices: close.map((a) => a.value) } : {}),
     });
-    if (flags.includes('quantity-inferred')) uncertain.push(`items.${id}.quantity`);
-    if (flags.includes('low-ocr-confidence')) uncertain.push(`items.${id}.lineTotal`);
+    if (flags.includes('quantity-inferred')) mark(marks, `items.${id}.quantity`, 'The quantity was read from a number before the name.');
+    if (close.length) mark(marks, `items.${id}.lineTotal`, 'The scanner was not sure how to read this price.');
+    else if (flags.includes('low-ocr-confidence')) mark(marks, `items.${id}.lineTotal`, 'Hard to read on the photo.');
+    if (flags.includes('unit-price-unknown') && unitValue !== null) {
+      // Quantity x unit price is printed evidence of what the line total should be. When it is one misread digit
+      // away from the line total, offer it on the price; otherwise the quantity is the doubtful part.
+      const product = qty * unitValue;
+      if (digitVariants(total).includes(product)) {
+        const item = items[items.length - 1]!;
+        item.choices = [...new Set([...(item.choices ?? []), product])];
+        mark(marks, `items.${id}.lineTotal`, `${qty} x ${(unitValue / 100).toFixed(2)} is ${(product / 100).toFixed(2)}. This price may be misread.`);
+      } else {
+        mark(marks, `items.${id}.quantity`, `The quantity times the unit price (${(unitValue / 100).toFixed(2)}) is not the line total.`);
+      }
+    }
   }
   for (const l of leftovers) if (l.letters >= 3) unparsed.push(l.line.text);
 
@@ -369,18 +390,28 @@ function interpret(input: OcrLine[], layout: Layout, opts: { attach: 'indent' | 
   const totals: { subtotal?: Minor; tax?: Minor; service?: Minor; tip?: Minor } = {};
   const totalCandidates: Array<{ value: Minor; strong: boolean; order: number }> = [];
   let discounts = 0;
-  const take = (role: MoneyRole, value: Minor, label: string, order: number, conf: number) => {
+  const take = (role: MoneyRole, value: Minor, label: string, order: number, tok: Token) => {
+    const conf = input[tok.obs]?.confidence ?? 1;
+    const isNew = role === 'discount' || role === 'total' || totals[role] === undefined;
     if (role === 'discount') discounts += value > 0 ? -value : value;
     else if (role === 'total') totalCandidates.push({ value, strong: STRONG_TOTAL.test(normalizeLabel(label)), order });
     else if (totals[role] === undefined) totals[role] = value;
-    if (conf < 0.6) uncertain.push(role === 'discount' ? 'discounts' : role);
+    if (!isNew) return;
+    const rate = /(\d{1,2}(?:[.,]\d+)?)\s?%/.exec(normalizeDigits(label));
+    if (rate && (role === 'tax' || role === 'service')) rates[role] = Number(rate[1]!.replace(',', '.'));
+    const path = role === 'discount' ? 'discounts' : role;
+    const close = alternatesOf(input, layout, tok).filter((a) => a.value !== value && (conf < 0.6 || a.confidence >= conf * 0.85));
+    if (close.length && role !== 'discount') {
+      marks.fieldChoices[role] = close.map((a) => a.value);
+      mark(marks, path, 'The scanner was not sure how to read this amount.');
+    } else if (conf < 0.6) mark(marks, path, 'Hard to read on the photo.');
   };
   const usedValues = new Set<Token>();
   info.forEach((l, k) => {
     if (inRecords.has(l.i)) return;
     if (MONEY.includes(l.role) && l.amounts.length > 0) {
       const v = rtl || l.script === 'arabic' ? l.amounts[0]! : l.amounts[l.amounts.length - 1]!;
-      if (v.value !== null) take(l.role as MoneyRole, v.value, l.line.text, k, input[v.obs]?.confidence ?? 1);
+      if (v.value !== null) take(l.role as MoneyRole, v.value, l.line.text, k, v);
       usedValues.add(v);
       return;
     }
@@ -398,7 +429,7 @@ function interpret(input: OcrLine[], layout: Layout, opts: { attach: 'indent' | 
         .sort((a, b) => Math.abs(a.x + a.w / 2 - mid) - Math.abs(b.x + b.w / 2 - mid))[0];
       if (under && under.value !== null) {
         usedValues.add(under);
-        take(role as MoneyRole, under.value, phrase.text, k, input[under.obs]?.confidence ?? 1);
+        take(role as MoneyRole, under.value, phrase.text, k, under);
       }
     }
   });
@@ -412,7 +443,10 @@ function interpret(input: OcrLine[], layout: Layout, opts: { attach: 'indent' | 
   const pool = consistent.length ? consistent : strong.length ? strong : totalCandidates;
   const chosen = [...pool].sort((a, b) => b.order - a.order)[0];
   const loosePrices = region.flatMap((l) => l.amounts).filter((t) => !records.some((r) => r.consumed.has(t))).map((t) => t.value).filter((v): v is number => v !== null);
-  const settled = settleArithmetic({ items, totals, total: chosen ? chosen.value : null, discounts, notes, uncertain, loosePrices });
+  const settled = settleArithmetic({
+    items, totals, total: chosen ? chosen.value : null, discounts, notes, uncertain, loosePrices,
+    reasons: marks.reasons, fieldChoices: marks.fieldChoices, rates,
+  });
 
   // ---- store, date, currency -----------------------------------------------------------------------------------
   const rows = info.map((l) => ({ text: l.line.text, h: Math.max(...l.line.obs.map((o) => input[o]!.h)), confidence: Math.min(...l.line.obs.map((o) => input[o]!.confidence)), i: l.i }));
@@ -440,6 +474,7 @@ function interpret(input: OcrLine[], layout: Layout, opts: { attach: 'indent' | 
     merchant, date: date.iso, currency: currency.code, items, discounts,
     subtotal: totals.subtotal ?? null, tax: totals.tax ?? null, service: totals.service ?? null, tip: totals.tip ?? null,
     total: settled.total, taxIncluded: settled.taxIncluded, uncertain, unparsed: unparsed.slice(0, 8), notes,
+    reasons: marks.reasons, fieldChoices: marks.fieldChoices,
   };
   const score = { exact: 100, repaired: 40, unknown: 0, broken: 0 }[settled.arith] - unparsed.length - (items.length === 0 ? 50 : 0);
   return { receipt, arith: settled.arith, score };
@@ -451,7 +486,7 @@ function lineIndexOf(layout: Layout, t: Token): number {
 }
 
 /** Name tokens of a record in reading order: lines top to bottom; observations by reading direction; words as printed. */
-function orderedNameTokens(r: Record, rtl: boolean): Token[] {
+function orderedNameTokens(r: ItemRecord, rtl: boolean): Token[] {
   const out: Token[] = [];
   for (const l of r.lines) {
     const byObs = new Map<number, Token[]>();
@@ -466,18 +501,19 @@ function orderedNameTokens(r: Record, rtl: boolean): Token[] {
 }
 
 /** Other amounts the scanner thought this price could be, from its runner-up readings of the observation. */
-function alternatesOf(input: OcrLine[], layout: Layout, t: Token): Minor[] {
+function alternatesOf(input: OcrLine[], layout: Layout, t: Token): Array<{ value: Minor; confidence: number }> {
   const obs = input[t.obs];
   if (!obs?.alternates?.length) return [];
   const words = obs.text.split(/\s+/).filter(Boolean);
   const k = words.indexOf(t.text);
-  const out: Minor[] = [];
-  for (const alt of obs.alternates) {
+  const out: Array<{ value: Minor; confidence: number }> = [];
+  obs.alternates.forEach((alt, n) => {
     const aw = alt.split(/\s+/).filter(Boolean);
     const cand = aw.length === words.length && k >= 0 ? aw[k]! : aw.find((w) => /\d[.,]\d\d/.test(w));
     const v = cand ? parseAmount(normalizeDigits(cand)) : null;
-    if (v !== null && !out.includes(v)) out.push(v);
-  }
+    // Runner-ups without a recorded confidence (older scans) count as much less sure than the reading itself.
+    if (v !== null && !out.some((o) => o.value === v)) out.push({ value: v, confidence: obs.alternateConfidences?.[n] ?? 0 });
+  });
   void layout;
   return out;
 }
@@ -522,14 +558,19 @@ export function readLayout(input: OcrLine[], layout: Layout): { receipt: Receipt
   const best = readings.reduce((a, b) => (b.score > a.score ? b : a));
   // Equally good readings that disagree about items: mark the items that differ.
   const rivals = readings.filter((r) => r !== best && r.score === best.score && best.arith !== 'unknown');
+  const marks: Marks = { uncertain: best.receipt.uncertain, reasons: best.receipt.reasons ?? {}, fieldChoices: best.receipt.fieldChoices ?? {} };
   for (const rival of rivals) {
     const key = (i: ReceiptItem) => `${i.description}|${i.quantity}|${i.lineTotal}`;
     const theirs = new Set(rival.receipt.items.map(key));
     for (const item of best.receipt.items) {
-      if (!theirs.has(key(item)) && !best.receipt.uncertain.includes(`items.${item.id}.lineTotal`)) {
-        best.receipt.uncertain.push(`items.${item.id}.lineTotal`, `items.${item.id}.quantity`);
-      }
+      if (theirs.has(key(item))) continue;
+      // The rival's reading of the same item, if it has one, becomes a choice.
+      const same = rival.receipt.items.find((o) => o.description === item.description);
+      if (same?.lineTotal != null && same.lineTotal !== item.lineTotal) item.choices = [...new Set([...(item.choices ?? []), same.lineTotal])];
+      mark(marks, `items.${item.id}.lineTotal`, 'Two readings of the receipt disagree about this line.');
+      if (!same || same.quantity !== item.quantity) mark(marks, `items.${item.id}.quantity`, 'Two readings of the receipt disagree about this line.');
     }
   }
+  best.receipt.reasons = marks.reasons;
   return { receipt: best.receipt, arith: best.arith };
 }
