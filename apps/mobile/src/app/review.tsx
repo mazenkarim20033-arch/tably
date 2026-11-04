@@ -7,11 +7,31 @@ import {
   setItemQuantity, setTaxIncluded, type HeaderField, type Receipt,
 } from '@tably/core';
 import { Button } from '../components/Button';
+import { Card, Section } from '../components/Card';
 import { AmountField, TextField } from '../components/Fields';
 import { useTheme } from '../theme/ThemeProvider';
-import { updateDraft, useDraft } from '../lib/draftStore';
+import { getDraft, updateDraft, useDraft } from '../lib/draftStore';
 import { ApiProblem, createBill, editReceipt, MismatchError } from '../lib/billsApi';
 import { getAdminToken, loadPayee, savePayee, saveBill } from '../lib/myBills';
+
+const TOTAL_PATHS = ['subtotal', 'discounts', 'service', 'tax', 'tip', 'total'];
+const CHECKED_HEADER = ['date', 'currency'];
+
+/** The receipt being edited, read once when the screen opens (for initial open/closed state). */
+function readDraftReceipt(): Receipt | null {
+  return getDraft()?.receipt ?? null;
+}
+
+/** An item the person should look at before sharing. */
+function needsLook(r: Receipt, i: Receipt['items'][number]): boolean {
+  return (
+    r.uncertain.includes(`items.${i.id}.lineTotal`) || r.uncertain.includes(`items.${i.id}.quantity`) ||
+    i.flags.includes('does-not-add-up') || (i.suggestedLineTotal !== undefined && i.suggestedLineTotal !== i.lineTotal) ||
+    i.lineTotal === null
+  );
+}
+
+const money2 = (m: number | null) => (m === null ? '—' : (m / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 
 export default function Review() {
   const { colors, space, radius } = useTheme();
@@ -22,6 +42,17 @@ export default function Review() {
   const [ipa, setIpa] = useState('');
   const [phone, setPhone] = useState('');
   const [link, setLink] = useState('');
+  // Which cards are unfolded. Items that need a look start open and stay open while they are fixed.
+  const [openItems, setOpenItems] = useState<Set<string>>(() => {
+    const r0 = readDraftReceipt();
+    return new Set((r0?.items ?? []).filter((i) => needsLook(r0!, i)).map((i) => i.id));
+  });
+  const [totalsOpen, setTotalsOpen] = useState(() => {
+    const r0 = readDraftReceipt();
+    return !!r0 && (r0.total === null || TOTAL_PATHS.some((k) => r0.uncertain.includes(k)));
+  });
+  const [payeeOpen, setPayeeOpen] = useState(true);
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   useEffect(() => {
     void loadPayee().then((p) => {
@@ -30,6 +61,8 @@ export default function Review() {
       setIpa(p.instapay_address ?? '');
       setPhone(p.instapay_phone ?? '');
       setLink(p.instapay_link ?? '');
+      // Saved before: fold it away, the person only needs to change it now and then.
+      if (p.payee_name && (p.instapay_address || p.instapay_phone || p.instapay_link)) setPayeeOpen(false);
     });
   }, []);
 
@@ -121,34 +154,199 @@ export default function Review() {
       { text: 'Retake', style: 'destructive', onPress: () => router.replace('/scan') },
     ]);
   };
-  const banner =
-    rec.status === 'ok' ? { c: colors.success, t: rec.message }
-    : rec.status === 'mismatch' ? { c: colors.danger, t: `${rec.message} Difference ${formatAmount(rec.difference ?? 0, r.currency)}.` }
+  const lookCount =
+    r.items.filter((i) => needsLook(r, i)).length +
+    TOTAL_PATHS.filter((k) => r.uncertain.includes(k)).length +
+    CHECKED_HEADER.filter((k) => r.uncertain.includes(k)).length;
+  const status =
+    rec.status === 'ok' ? { c: colors.success, t: 'Matches the receipt total' }
+    : rec.status === 'mismatch' ? { c: colors.danger, t: `The receipt says ${money2(rec.printedTotal)}, which is ${money2(Math.abs(rec.difference ?? 0))} ${(rec.difference ?? 0) > 0 ? 'more' : 'less'}. Check the amounts below.` }
     : { c: colors.warning, t: rec.message };
+  const toggle = <T,>(set: Set<T>, v: T) => {
+    const next = new Set(set);
+    if (next.has(v)) next.delete(v);
+    else next.add(v);
+    return next;
+  };
+  const dateText = r.date ? new Date(`${r.date}T12:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : 'No date';
+  const totalsSummary = [
+    r.subtotal !== null && `Subtotal ${money2(r.subtotal)}`,
+    r.discounts !== 0 && `Discount ${money2(r.discounts)}`,
+    r.service !== null && `Service ${money2(r.service)}`,
+    r.tax !== null && `Tax ${money2(r.tax)}`,
+    r.tip !== null && `Tip ${money2(r.tip)}`,
+    r.total !== null && `Total ${money2(r.total)}`,
+    r.taxIncluded && 'Tax and service included in prices',
+  ].filter(Boolean).join('  ·  ') || 'Nothing printed below the items.';
+  const payeeSummary = hasPayee ? [payee.payee_name, payee.instapay_address ?? payee.instapay_phone ?? payee.instapay_link].filter(Boolean).join(' · ') : 'Add where friends should send money.';
+  const addUnparsed = (text: string) => {
+    const added = addItem(r);
+    const id = added.items[added.items.length - 1]!.id;
+    edit({ ...setItemDescription(added, id, text.replace(/\s{2,}/g, ' ').trim()), unparsed: r.unparsed.filter((x) => x !== text) });
+    setOpenItems((o) => new Set(o).add(id));
+  };
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }}>
-      <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.md, paddingBottom: 140 }} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.md, paddingBottom: 160 }} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
         <Text style={{ color: colors.text, fontSize: 28, fontWeight: '700', letterSpacing: -0.6 }}>{draft.editBillId ? 'Edit receipt' : 'Review receipt'}</Text>
 
         {draft.ocrError && (
           <Text style={{ color: colors.warning }}>Text recognition did not run ({draft.ocrError}) Enter the receipt below.</Text>
         )}
-        {draft.imageUri && (
-          <Pressable onPress={() => setShowImage((s) => !s)} accessibilityRole="button">
-            <Text style={{ color: colors.accent, fontWeight: '600' }}>{showImage ? 'Hide original receipt' : 'Show original receipt'}</Text>
-            {showImage && <Image source={{ uri: draft.imageUri }} resizeMode="contain" style={{ width: '100%', height: 420, marginTop: 8, borderRadius: radius.md }} />}
+
+        {/* Summary: what this receipt is, what it adds up to, and how much needs a look. */}
+        <Card tone={rec.status === 'mismatch' ? 'danger' : lookCount > 0 ? 'warning' : undefined} style={{ gap: space.md }}>
+          <TextField value={r.merchant ?? ''} onChange={(v) => edit(setField(r, 'merchant', v))} placeholder="Restaurant name" />
+          <Pressable onPress={() => setDetailsOpen((o) => !o)} accessibilityRole="button" style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Text style={{ color: CHECKED_HEADER.some((k) => flagged(k)) ? colors.warning : colors.textMuted, fontSize: 14 }}>
+              {dateText} · {r.currency}{CHECKED_HEADER.some((k) => flagged(k)) ? ' · check' : ''}
+            </Text>
+            <Text style={{ color: colors.accent, fontWeight: '600' }}>{detailsOpen ? 'Done' : 'Edit'}</Text>
           </Pressable>
-        )}
-        {!draft.editBillId && (
-          <Text accessibilityRole="button" onPress={retake} style={{ color: colors.accent, fontWeight: '600' }}>
-            {draft.imageUri ? 'Retake photo' : 'Scan a receipt instead'}
-          </Text>
+          {detailsOpen && (
+            <View style={{ flexDirection: 'row', gap: space.sm }}>
+              <TextField label="Date (YYYY-MM-DD)" width="62%" value={r.date ?? ''} uncertain={flagged('date')} onChange={(v) => edit(setField(r, 'date', v === '' ? null : v))} placeholder="2026-11-03" autoCapitalize="none" />
+              <TextField label="Currency" width="34%" value={r.currency} uncertain={flagged('currency')} onChange={(v) => edit(setField(r, 'currency', v.toUpperCase().slice(0, 3)))} autoCapitalize="characters" />
+            </View>
+          )}
+          <View style={{ gap: 2 }}>
+            <Text style={{ color: colors.textFaint, fontSize: 13 }}>Items and charges add up to</Text>
+            <Text style={{ color: colors.text, fontSize: 32, fontWeight: '700', letterSpacing: -0.8 }}>{money2(rec.computedTotal)} <Text style={{ fontSize: 16, fontWeight: '500', color: colors.textMuted }}>{r.currency}</Text></Text>
+          </View>
+          <Text style={{ color: status.c, fontWeight: '600' }}>{status.t}</Text>
+          {lookCount > 0 && (
+            <Text style={{ color: colors.warning, fontSize: 14 }}>
+              {lookCount === 1 ? '1 thing' : `${lookCount} things`} to check, outlined in amber below.
+            </Text>
+          )}
+          {(r.notes ?? []).map((n) => (
+            <Text key={n} style={{ color: colors.textMuted, fontSize: 13 }}>• {n}</Text>
+          ))}
+          <View style={{ flexDirection: 'row', gap: space.lg, alignItems: 'center', flexWrap: 'wrap' }}>
+            {draft.imageUri && (
+              <Pressable onPress={() => setShowImage((v) => !v)} accessibilityRole="button">
+                <Text style={{ color: colors.accent, fontWeight: '600' }}>{showImage ? 'Hide original' : 'Show original'}</Text>
+              </Pressable>
+            )}
+            {!draft.editBillId && (
+              <Pressable onPress={retake} accessibilityRole="button">
+                <Text style={{ color: colors.accent, fontWeight: '600' }}>{draft.imageUri ? 'Retake photo' : 'Scan a receipt instead'}</Text>
+              </Pressable>
+            )}
+          </View>
+          {showImage && draft.imageUri && <Image source={{ uri: draft.imageUri }} resizeMode="contain" style={{ width: '100%', height: 420, borderRadius: radius.sm }} />}
+        </Card>
+
+        {/* Items: one line each; tap to edit. Items that need a look start open. */}
+        <Text style={{ color: colors.text, fontSize: 18, fontWeight: '600', marginTop: space.sm }}>Items</Text>
+        {r.items.map((i) => {
+          const open = openItems.has(i.id);
+          const look = needsLook(r, i);
+          const reason = r.reasons?.[`items.${i.id}.lineTotal`] ?? r.reasons?.[`items.${i.id}.quantity`];
+          return (
+            <Card key={i.id} tone={look ? 'warning' : undefined}>
+              <Pressable onPress={() => setOpenItems((o) => toggle(o, i.id))} accessibilityRole="button" accessibilityState={{ expanded: open }} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: space.sm }}>
+                <Text style={{ color: colors.textMuted, fontWeight: '600', minWidth: 28, fontSize: 15 }}>{i.quantity}×</Text>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text numberOfLines={open ? undefined : 2} style={{ color: i.description.trim() ? colors.text : colors.textFaint, fontSize: 16 }}>{i.description.trim() || 'Unnamed item'}</Text>
+                  {!open && look && reason ? <Text numberOfLines={2} style={{ color: colors.warning, fontSize: 13 }}>{reason}</Text> : null}
+                  {i.quantity > 1 && i.unitPrice !== null && !open ? <Text style={{ color: colors.textFaint, fontSize: 13 }}>{money2(i.unitPrice)} each</Text> : null}
+                </View>
+                <Text style={{ color: look ? colors.warning : colors.text, fontSize: 16, fontWeight: '600' }}>{money2(i.lineTotal)}</Text>
+              </Pressable>
+              {open && (
+                <View style={{ gap: space.sm }}>
+                  <TextField label="Name" value={i.description} onChange={(v) => edit(setItemDescription(r, i.id, v))} placeholder="Item" />
+                  {i.suggestedLineTotal !== undefined && i.suggestedLineTotal !== i.lineTotal && !r.reasons?.[`items.${i.id}.lineTotal`] && (
+                    <Text style={{ color: colors.warning, fontSize: 13 }}>
+                      The items only add up to the receipt if this price is {formatAmount(i.suggestedLineTotal, r.currency)}. The scanner may have misread a digit. Check the photo.
+                    </Text>
+                  )}
+                  {dispute(
+                    `items.${i.id}.lineTotal`,
+                    i.lineTotal,
+                    [...(i.suggestedLineTotal !== undefined ? [i.suggestedLineTotal] : []), ...(i.choices ?? [])],
+                    (v) => edit(setItemLineTotal(r, i.id, v)),
+                  )}
+                  {flagged(`items.${i.id}.quantity`) && r.reasons?.[`items.${i.id}.quantity`] && r.reasons[`items.${i.id}.quantity`] !== r.reasons[`items.${i.id}.lineTotal`] && (
+                    <Text style={{ color: colors.warning, fontSize: 13 }}>{r.reasons[`items.${i.id}.quantity`]}</Text>
+                  )}
+                  {i.flags.includes('does-not-add-up') && (
+                    <Text style={{ color: colors.warning, fontSize: 13 }}>
+                      This may not be an item: without it, the items match the receipt subtotal. Remove it if it is something else (an address, a code).
+                    </Text>
+                  )}
+                  <View style={{ flexDirection: 'row', gap: space.sm, alignItems: 'flex-end' }}>
+                    <TextField label="Qty" width={70} keyboardType="number-pad" value={String(i.quantity)} uncertain={flagged(`items.${i.id}.quantity`)} onChange={(v) => edit(setItemQuantity(r, i.id, Number(v)))} />
+                    <View style={{ flex: 1 }}>
+                      <AmountField label={i.quantity > 1 ? 'Line total' : 'Price'} value={i.lineTotal} uncertain={flagged(`items.${i.id}.lineTotal`)} onChange={(v) => edit(setItemLineTotal(r, i.id, v))} />
+                    </View>
+                  </View>
+                  {i.quantity > 1 && (
+                    <Text style={{ color: colors.textFaint, fontSize: 13 }}>
+                      {i.unitPrice === null ? 'Per-unit price not exact; kept as a line total.' : `${formatAmount(i.unitPrice, r.currency)} each`}
+                    </Text>
+                  )}
+                  <Pressable onPress={() => edit(removeItem(r, i.id))} accessibilityRole="button" accessibilityLabel={`Remove ${i.description || 'item'}`} hitSlop={8} style={{ alignSelf: 'flex-start' }}>
+                    <Text style={{ color: colors.danger, fontWeight: '600' }}>Remove item</Text>
+                  </Pressable>
+                </View>
+              )}
+            </Card>
+          );
+        })}
+        <Button
+          label="Add item"
+          variant="quiet"
+          onPress={() => {
+            const added = addItem(r);
+            edit(added);
+            setOpenItems((o) => new Set(o).add(added.items[added.items.length - 1]!.id));
+          }}
+        />
+
+        {r.unparsed.length > 0 && (
+          <Card>
+            <Text style={{ color: colors.textMuted, fontSize: 14 }}>Rows we could not read. Tap one to add it as an item:</Text>
+            {r.unparsed.map((u, n) => (
+              <Pressable key={n} onPress={() => addUnparsed(u)} accessibilityRole="button" style={{ paddingVertical: 4 }}>
+                <Text style={{ color: colors.accent, fontSize: 15 }}>+ {u.replace(/\s{2,}/g, ' ')}</Text>
+              </Pressable>
+            ))}
+          </Card>
         )}
 
-        <View style={{ borderLeftWidth: 3, borderLeftColor: banner.c, paddingLeft: 12 }}>
-          <Text style={{ color: banner.c, fontWeight: '600' }}>{banner.t}</Text>
-        </View>
+        <Section
+          title="Totals and charges"
+          summary={totalsSummary}
+          open={totalsOpen}
+          onToggle={() => setTotalsOpen((o) => !o)}
+          tone={rec.status === 'mismatch' ? 'danger' : TOTAL_PATHS.some((k) => flagged(k)) ? 'warning' : undefined}
+        >
+          {money('subtotal', 'Subtotal (as printed)')}
+          {money('discounts', 'Discounts')}
+          {money('service', 'Service charge')}
+          {money('tax', 'Tax')}
+          {money('tip', 'Tip')}
+          {money('total', 'Total (as printed)')}
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.md }}>
+            <Text style={{ color: colors.textMuted, flex: 1 }}>Tax and service are already included in the item prices</Text>
+            <Switch value={r.taxIncluded} onValueChange={(v) => edit(setTaxIncluded(r, v))} />
+          </View>
+          <Text style={{ color: colors.textFaint, fontSize: 13 }}>Items add up to {formatAmount(rec.itemsSum, r.currency)}.</Text>
+        </Section>
+
+        {!draft.editBillId && (
+          <Section title="Where should friends pay you?" summary={payeeSummary} open={payeeOpen} onToggle={() => setPayeeOpen((o) => !o)} tone={hasPayee ? undefined : 'warning'}>
+            <Text style={{ color: colors.textMuted, fontSize: 14 }}>Shown to people with your link. They send money from their own bank app; you confirm each payment yourself. Add at least one of address, phone or link.</Text>
+            <TextField label="Your name" value={payeeName} onChange={setPayeeName} placeholder="Shown to friends" />
+            <TextField label="InstaPay address" value={ipa} onChange={setIpa} placeholder="name@instapay" autoCapitalize="none" autoCorrect={false} />
+            <TextField label="Phone number linked to InstaPay" value={phone} onChange={setPhone} placeholder="01012345678" keyboardType="number-pad" />
+            <TextField label="InstaPay payment link (optional)" value={link} onChange={setLink} placeholder="https://ipn.eg/..." autoCapitalize="none" autoCorrect={false} />
+          </Section>
+        )}
+
         {draft.ocr.length > 0 && (
           <Text
             accessibilityRole="button"
@@ -158,93 +356,11 @@ export default function Review() {
                 message: encodeOcrDump({ lines: draft.ocr, width: draft.ocrSize?.width ?? 0, height: draft.ocrSize?.height ?? 0 }),
               })
             }
-            style={{ color: colors.textFaint, fontSize: 13, textDecorationLine: 'underline' }}
+            style={{ color: colors.textFaint, fontSize: 13, textDecorationLine: 'underline', textAlign: 'center', marginTop: space.sm }}
           >
-            Share what the scanner read (helps fix wrong readings)
+            Something wrong with the scan? Share what the scanner read
           </Text>
         )}
-        {(r.notes ?? []).map((n) => (
-          <Text key={n} style={{ color: colors.textMuted, fontSize: 14 }}>• {n}</Text>
-        ))}
-        {r.uncertain.some((u) => u !== 'merchant' && !u.endsWith('.description')) && (
-          <Text style={{ color: colors.textMuted, fontSize: 14 }}>Fields outlined in amber were hard to read or were calculated. Edit or tap into one to confirm it.</Text>
-        )}
-
-        <TextField label="Store" value={r.merchant ?? ''} onChange={(v) => edit(setField(r, 'merchant', v))} placeholder="Restaurant name" />
-        <View style={{ flexDirection: 'row', gap: space.sm }}>
-          <TextField label="Date (YYYY-MM-DD)" width="62%" value={r.date ?? ''} uncertain={flagged('date')} onChange={(v) => edit(setField(r, 'date', v === '' ? null : v))} placeholder="2026-11-03" autoCapitalize="none" />
-          <TextField label="Currency" width="34%" value={r.currency} uncertain={flagged('currency')} onChange={(v) => edit(setField(r, 'currency', v.toUpperCase().slice(0, 3)))} autoCapitalize="characters" />
-        </View>
-
-        <Text style={{ color: colors.text, fontSize: 18, fontWeight: '600', marginTop: space.md }}>Items</Text>
-        {r.items.map((i) => (
-          <View key={i.id} style={{ backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, borderRadius: radius.md, padding: space.md, gap: space.sm }}>
-            <TextField value={i.description} onChange={(v) => edit(setItemDescription(r, i.id, v))} placeholder="Item" />
-            {i.suggestedLineTotal !== undefined && i.suggestedLineTotal !== i.lineTotal && !r.reasons?.[`items.${i.id}.lineTotal`] && (
-              <Text style={{ color: colors.warning, fontSize: 13 }}>
-                The items only add up to the receipt if this price is {formatAmount(i.suggestedLineTotal, r.currency)}. The scanner may have misread a digit. Check the photo.
-              </Text>
-            )}
-            {dispute(
-              `items.${i.id}.lineTotal`,
-              i.lineTotal,
-              [...(i.suggestedLineTotal !== undefined ? [i.suggestedLineTotal] : []), ...(i.choices ?? [])],
-              (v) => edit(setItemLineTotal(r, i.id, v)),
-            )}
-            {flagged(`items.${i.id}.quantity`) && r.reasons?.[`items.${i.id}.quantity`] && r.reasons[`items.${i.id}.quantity`] !== r.reasons[`items.${i.id}.lineTotal`] && (
-              <Text style={{ color: colors.warning, fontSize: 13 }}>{r.reasons[`items.${i.id}.quantity`]}</Text>
-            )}
-            {i.flags.includes('does-not-add-up') && (
-              <Text style={{ color: colors.warning, fontSize: 13 }}>
-                This may not be an item: without it, the items match the receipt subtotal. Tap × to remove it if it is something else (an address, a code).
-              </Text>
-            )}
-            <View style={{ flexDirection: 'row', gap: space.sm, alignItems: 'flex-end' }}>
-              <TextField label="Qty" width={70} keyboardType="number-pad" value={String(i.quantity)} uncertain={flagged(`items.${i.id}.quantity`)} onChange={(v) => edit(setItemQuantity(r, i.id, Number(v)))} />
-              <View style={{ flex: 1 }}>
-                <AmountField label={i.quantity > 1 ? 'Line total' : 'Price'} value={i.lineTotal} uncertain={flagged(`items.${i.id}.lineTotal`)} onChange={(v) => edit(setItemLineTotal(r, i.id, v))} />
-              </View>
-              <Pressable onPress={() => edit(removeItem(r, i.id))} accessibilityLabel={`Remove ${i.description || 'item'}`} hitSlop={8} style={{ paddingBottom: 12 }}>
-                <Text style={{ color: colors.danger, fontSize: 22 }}>×</Text>
-              </Pressable>
-            </View>
-            {i.quantity > 1 && (
-              <Text style={{ color: colors.textFaint, fontSize: 13 }}>
-                {i.unitPrice === null ? 'Per-unit price not exact; kept as a line total.' : `${formatAmount(i.unitPrice, r.currency)} each`}
-              </Text>
-            )}
-          </View>
-        ))}
-        <Button label="Add item" variant="quiet" onPress={() => edit(addItem(r))} />
-
-        {r.unparsed.length > 0 && (
-          <View style={{ gap: 4 }}>
-            <Text style={{ color: colors.textMuted, fontSize: 14 }}>Rows we could not read. Add them as items if they matter:</Text>
-            {r.unparsed.map((u, n) => <Text key={n} style={{ color: colors.textFaint, fontSize: 14 }}>· {u}</Text>)}
-          </View>
-        )}
-
-        {!draft.editBillId && <>
-        <Text style={{ color: colors.text, fontSize: 18, fontWeight: '600', marginTop: space.md }}>Where should friends pay you?</Text>
-        <Text style={{ color: colors.textMuted, fontSize: 14 }}>Shown to people with your link. They send money from their own bank app; you confirm each payment yourself. Add at least one of address, phone or link.</Text>
-        <TextField label="Your name" value={payeeName} onChange={setPayeeName} placeholder="Shown to friends" />
-        <TextField label="InstaPay address" value={ipa} onChange={setIpa} placeholder="name@instapay" autoCapitalize="none" autoCorrect={false} />
-        <TextField label="Phone number linked to InstaPay" value={phone} onChange={setPhone} placeholder="01012345678" keyboardType="number-pad" />
-        <TextField label="InstaPay payment link (optional)" value={link} onChange={setLink} placeholder="https://ipn.eg/..." autoCapitalize="none" autoCorrect={false} />
-        </>}
-
-        <Text style={{ color: colors.text, fontSize: 18, fontWeight: '600', marginTop: space.md }}>Totals</Text>
-        {money('subtotal', 'Subtotal (as printed)')}
-        {money('discounts', 'Discounts')}
-        {money('service', 'Service charge')}
-        {money('tax', 'Tax')}
-        {money('tip', 'Tip')}
-        {money('total', 'Total (as printed)')}
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.md }}>
-          <Text style={{ color: colors.textMuted, flex: 1 }}>Tax and service are already included in the item prices</Text>
-          <Switch value={r.taxIncluded} onValueChange={(v) => edit(setTaxIncluded(r, v))} />
-        </View>
-        <Text style={{ color: colors.textFaint, fontSize: 13 }}>Items add up to {formatAmount(rec.itemsSum, r.currency)}.</Text>
       </ScrollView>
 
       <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: space.lg, backgroundColor: colors.bg, borderTopColor: colors.border, borderTopWidth: 1, gap: space.sm }}>
