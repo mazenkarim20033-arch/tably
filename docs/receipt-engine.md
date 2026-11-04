@@ -1,7 +1,48 @@
 # TABLY receipt engine: assessment and redesign
 
-Status: milestone 2 done (layout engine in `packages/core/src/engine/`). The app still uses the old reader; it
-switches once the new engine beats it on real held-out receipts.
+Status: milestone 3 done (meaning and pairing in `packages/core/src/engine/read.ts`). The app still uses the old
+reader; it switches once the new engine beats it on real held-out receipts.
+
+## Milestone 3: meaning and pairing (stages D and E)
+
+- **Shared rules:** the arithmetic rules moved to `arithmetic.ts`, shared by both readers. That move changed no
+  score and no test.
+- **Line roles** come from words, checked from the most specific meaning to the least:
+  - header, then table or invoice numbers, then counts ("Total Qty", "Min Charge", covers)
+  - then subtotal, then the charge printed first (tax, service, tip, discount)
+  - then payment, then total, then other non-item lines
+  - punctuation inside words is ignored ("V.A.T" is "vat")
+- **Summary boxes:** labels printed above their values take the value under them, by horizontal overlap.
+- **Line-total column:** the column equal to quantity × another column, else the column at the end of the reading
+  direction (right for English, left for Arabic).
+- **Items are segmented at the edge where names start.** That edge is fitted as a slanting line:
+  - an indented line continues the item above
+  - a line in the other script is a caption
+  - "2 @ 15.00" gives the item above its quantity and unit price
+  - a number between two words of a name stays in the name
+- **Several readings** are built (how loose text lines attach, which column is the line total). The one whose numbers
+  add up wins. Equally good readings that disagree mark the disputed items for review.
+- **Fallback:** the old reader is used only when its reading adds up and the new one's does not.
+
+| | baseline | milestone 2 | milestone 3 |
+|---|---|---|---|
+| real dev, exact receipts | 3 of 4 | 3 of 4 | 4 of 4 |
+| synthetic, exact receipts | 37% | 37% | 88.8% |
+| synthetic, item recall | 80.9% | 88.4% | 99.8% |
+| synthetic, price accuracy | 90.6% | 93.3% | 98.8% |
+| synthetic, prices on the wrong item | 99 | 65 | 2 |
+| synthetic, false items | 44 | 35 | 1 |
+| synthetic, silent wrong fields | 1,325 | 927 | 24 |
+| time per receipt (median) | 5.8 ms | 4.3 ms | 1.3 ms |
+
+- **The ceiling:** about 15% of synthetic receipts carry a deliberately misread digit and cannot be exact. 88.8% is
+  close to that ceiling.
+- **What remains:** most of the remaining silent errors are those misreads when more than one price could explain the
+  gap. They are only noted, not marked on a field. That is milestone 4.
+
+**Caution about these numbers.** The same person wrote the synthetic generator and the new rules, so the synthetic
+set flatters the engine. The generator also had a bug, fixed here: a misread digit was not applied to the word
+boxes. Only real held-out receipts can show how well the engine generalises.
 
 ## Milestone 2: layout (stage C)
 

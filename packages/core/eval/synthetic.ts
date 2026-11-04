@@ -406,7 +406,10 @@ function corrupt(lines: OcrLine[], r: Rand): { lines: OcrLine[]; tags: string[] 
       const i = pick(r, at);
       const text = victim.text.slice(0, i) + (swap[victim.text[i]!] ?? '8') + victim.text.slice(i + 1);
       const keep = chance(r, 0.5);
-      out = out.map((l) => (l === victim ? { ...l, text, confidence: 0.5 + r() * 0.3, ...(keep ? { alternates: [victim.text], alternateConfidences: [0.4] } : {}) } : l));
+      // Word boxes carry the same (wrong) reading as the line: the scanner derives them from one string.
+      const parts = text.split(' ').filter(Boolean);
+      const words = victim.words?.length === parts.length ? victim.words.map((w, k) => ({ ...w, text: parts[k]! })) : victim.words;
+      out = out.map((l) => (l === victim ? { ...l, text, words, confidence: 0.5 + r() * 0.3, ...(keep ? { alternates: [victim.text], alternateConfidences: [0.4] } : {}) } : l));
       tags.push(keep ? 'misread-with-runner-up' : 'misread');
     }
   }

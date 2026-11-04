@@ -97,6 +97,8 @@ function classifyToken(text: string): { kind: Token['kind']; value: number | nul
   const t = normalizeDigits(text).replace(/^(egp|le|usd|\$|€|£)/i, '').replace(/(egp|le|ج\.?م\.?)$/i, '');
   if (AMOUNT.test(t)) return { kind: 'amount', value: parseAmount(t.replace(/[()]/g, '').replace(/-$/, '')) };
   if (INTEGER.test(t)) return { kind: 'integer', value: Number(t) };
+  // A quantity printed with a decimal ("1.0", "2.000"): a whole number, not money.
+  if (/^\d{1,3}[.,]0{1,3}$/.test(t) && !AMOUNT.test(t)) return { kind: 'integer', value: Math.round(Number(t.replace(',', '.'))) };
   return { kind: 'word', value: null };
 }
 
@@ -106,12 +108,14 @@ function wordsOf(l: OcrLine): Array<{ text: string; x: number; y: number; w: num
   if (l.words && l.words.length === parts.length) return l.words;
   const chars = parts.reduce((n, p) => n + p.length, 0) + Math.max(0, parts.length - 1);
   const per = chars > 0 ? l.w / chars : 0;
-  let at = l.x;
+  // Arabic text is printed right to left: its first word is the rightmost.
+  const arabic = (l.text.match(/[؀-ۿ]/g) ?? []).length > (l.text.match(/[A-Za-z]/g) ?? []).length;
+  let at = arabic ? l.x + l.w : l.x;
   return parts.map((text) => {
     const w = text.length * per;
-    const word = { text, x: at, y: l.y, w, h: l.h };
-    at += w + per;
-    return word;
+    const x = arabic ? at - w : at;
+    at = arabic ? at - w - per : at + w + per;
+    return { text, x, y: l.y, w, h: l.h };
   });
 }
 
