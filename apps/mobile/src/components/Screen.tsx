@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useTheme } from '../theme/ThemeProvider';
@@ -10,13 +10,15 @@ import { Icon } from './Icon';
  * footer pinned to the bottom (the main action). Keeping this in one place keeps all screens aligned.
  */
 export function Screen({
-  title, subtitle, back = true, right, footer, scroll = true, onRefresh, children, gap,
+  title, subtitle, back = true, right, footer, overlay, scroll = true, onRefresh, children, gap,
 }: {
   title?: string;
   subtitle?: ReactNode;
   back?: boolean;
   right?: ReactNode;
   footer?: ReactNode;
+  /** Covers the whole screen (for "working…" states). Drawn in the screen itself, never as a native pop-up. */
+  overlay?: ReactNode;
   scroll?: boolean;
   onRefresh?: () => void | Promise<void>;
   children: ReactNode;
@@ -52,6 +54,7 @@ export function Screen({
     </>
   );
   return (
+    <View style={{ flex: 1, backgroundColor: colors.bg }}>
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: colors.bg }}>
       {scroll ? (
         <ScrollView
@@ -82,5 +85,7 @@ export function Screen({
         </View>
       ) : null}
     </SafeAreaView>
+    {overlay ? <View style={StyleSheet.absoluteFill} pointerEvents="auto">{overlay}</View> : null}
+    </View>
   );
 }

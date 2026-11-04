@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
@@ -12,18 +12,32 @@ import { useTheme } from '../theme/ThemeProvider';
 import { isOcrAvailable, recognizeText } from '../../modules/tably-vision';
 import { startDraft, updateDraft } from '../lib/draftStore';
 
+const READ_LIMIT_MS = 60_000;
+
+/** Give up waiting after `ms`: the person is sent to type the receipt in, rather than left on a spinner. */
+function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const limit = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error('Reading took too long. Retake the photo or type the receipt in.')), ms);
+  });
+  return Promise.race([work, limit]).finally(() => clearTimeout(timer));
+}
+
 export default function Scan() {
   const { colors, space, font, soft } = useTheme();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   async function process(uri: string) {
+    if (busy) return;
     setBusy(true);
     setMessage(null);
+    // Let the "reading" overlay draw before the heavy work starts, so the screen never looks frozen.
+    await new Promise((resolve) => setTimeout(resolve, 80));
     try {
       await startDraft(uri);
       try {
-        const result = await recognizeText(uri);
+        const result = await withTimeout(recognizeText(uri), READ_LIMIT_MS);
         updateDraft({ ocr: result.lines, ocrSize: { width: result.width, height: result.height }, receipt: readReceipt(result.lines) });
       } catch (e) {
         // Keep the photo and let the user type the receipt in; never fake a result.
@@ -64,7 +78,19 @@ export default function Scan() {
   );
 
   return (
-    <Screen title="Scan a receipt" subtitle="You can check everything before you share.">
+    <Screen
+      title="Scan a receipt"
+      subtitle="You can check everything before you share."
+      overlay={busy ? (
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(8,10,20,0.78)', padding: space.xl }}>
+          <View style={{ alignItems: 'center', gap: space.md, padding: space.xl, borderRadius: 28, backgroundColor: colors.surface, minWidth: 240 }}>
+            <ActivityIndicator size="large" color={colors.accent} />
+            <Text style={{ ...font.headline, color: colors.text }}>Reading your receipt…</Text>
+            <Text style={{ ...font.footnote, color: colors.textMuted, textAlign: 'center' }}>This takes a few seconds.</Text>
+          </View>
+        </View>
+      ) : undefined}
+    >
       {!isOcrAvailable && (
         <Callout tone="warning">Text recognition only works in the iPhone build. Here you can attach a photo and type the receipt in.</Callout>
       )}
@@ -92,15 +118,6 @@ export default function Scan() {
         </Text>
       </Card>
 
-      <Modal visible={busy} transparent animationType="fade" statusBarTranslucent>
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(8,10,20,0.78)', padding: space.xl }}>
-          <View style={{ alignItems: 'center', gap: space.md, padding: space.xl, borderRadius: 28, backgroundColor: colors.surface, minWidth: 240 }}>
-            <ActivityIndicator size="large" color={colors.accent} />
-            <Text style={{ ...font.headline, color: colors.text }}>Reading your receipt…</Text>
-            <Text style={{ ...font.footnote, color: colors.textMuted, textAlign: 'center' }}>This takes a few seconds.</Text>
-          </View>
-        </View>
-      </Modal>
     </Screen>
   );
 }
