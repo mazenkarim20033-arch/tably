@@ -1,16 +1,19 @@
 import { useState } from 'react';
-import { ActivityIndicator, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { ActivityIndicator, Modal, Pressable, Text, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { readReceipt } from '@tably/core';
-import { Button } from '../components/Button';
+import { brand, readReceipt } from '@tably/core';
+import { Callout } from '../components/Bits';
+import { Card } from '../components/Card';
+import { Icon, type IconName } from '../components/Icon';
+import { Screen } from '../components/Screen';
 import { useTheme } from '../theme/ThemeProvider';
 import { isOcrAvailable, recognizeText } from '../../modules/tably-vision';
 import { startDraft, updateDraft } from '../lib/draftStore';
 
 export default function Scan() {
-  const { colors, space } = useTheme();
+  const { colors, space, font, soft } = useTheme();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -50,31 +53,54 @@ export default function Scan() {
     router.replace('/review');
   }
 
+  const option = (icon: IconName, title: string, body: string, onPress: () => void) => (
+    <Card onPress={onPress} style={{ flex: 1, gap: space.sm }}>
+      <View style={{ width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: soft.accent }}>
+        <Icon name={icon} size={20} color={colors.accent} />
+      </View>
+      <Text style={{ ...font.headline, color: colors.text }}>{title}</Text>
+      <Text style={{ ...font.footnote, color: colors.textMuted }}>{body}</Text>
+    </Card>
+  );
+
   return (
-    <SafeAreaView style={{ flex: 1, padding: space.lg, justifyContent: 'space-between', backgroundColor: colors.bg }}>
-      <View style={{ gap: space.sm, marginTop: space.xl }}>
-        <Text style={{ color: colors.text, fontSize: 28, fontWeight: '700', letterSpacing: -0.6 }}>Scan a receipt</Text>
-        <Text style={{ color: colors.textMuted, fontSize: 16, lineHeight: 24 }}>
-          Lay the receipt flat in good light and fit it in the frame. You can review everything before sharing.
-        </Text>
-        {!isOcrAvailable && (
-          <Text style={{ color: colors.warning, fontSize: 14, marginTop: space.sm }}>
-            Text recognition only works in the iPhone build. Here you can attach a photo and type the receipt in.
-          </Text>
-        )}
-        {message && <Text style={{ color: colors.danger, fontSize: 14 }}>{message}</Text>}
-        {busy && (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: space.md }}>
-            <ActivityIndicator color={colors.accent} />
-            <Text style={{ color: colors.textMuted }}>Reading your receipt…</Text>
+    <Screen title="Scan a receipt" subtitle="You can check everything before you share.">
+      {!isOcrAvailable && (
+        <Callout tone="warning">Text recognition only works in the iPhone build. Here you can attach a photo and type the receipt in.</Callout>
+      )}
+      {message && <Callout tone="danger">{message}</Callout>}
+
+      <Pressable onPress={camera} accessibilityRole="button" accessibilityLabel="Take a photo of the receipt" style={({ pressed }) => ({ opacity: pressed ? 0.9 : 1, borderRadius: 28, overflow: 'hidden' })}>
+        <LinearGradient colors={[...brand.gradient]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ padding: space.lg, paddingVertical: space.xl, gap: space.md, minHeight: 200, justifyContent: 'flex-end' }}>
+          <View style={{ position: 'absolute', top: space.lg, right: space.lg, width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.22)' }}>
+            <Icon name="camera" size={28} color="#fff" />
           </View>
-        )}
+          <Text style={{ ...font.title, fontSize: 26, color: '#fff' }}>Take a photo</Text>
+          <Text style={{ ...font.callout, color: 'rgba(255,255,255,0.88)', maxWidth: 260 }}>Fit the whole receipt in the frame. TABLY reads it on your phone.</Text>
+        </LinearGradient>
+      </Pressable>
+
+      <View style={{ flexDirection: 'row', gap: space.sm }}>
+        {option('image', 'From photos', 'Use a picture you already took.', library)}
+        {option('edit', 'Type it in', 'Enter the items yourself.', manual)}
       </View>
-      <View style={{ gap: space.sm }}>
-        <Button label="Take a photo" onPress={camera} disabled={busy} />
-        <Button label="Choose from photos" variant="quiet" onPress={library} disabled={busy} />
-        <Button label="Enter manually" variant="quiet" onPress={manual} disabled={busy} />
-      </View>
-    </SafeAreaView>
+
+      <Card style={{ gap: 6 }}>
+        <Text style={{ ...font.headline, color: colors.text }}>For the best read</Text>
+        <Text style={{ ...font.callout, color: colors.textMuted }}>
+          Lay the receipt flat in good light and include the total at the bottom. Folds and glare make digits harder to read. Your photo stays on this phone.
+        </Text>
+      </Card>
+
+      <Modal visible={busy} transparent animationType="fade" statusBarTranslucent>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(8,10,20,0.78)', padding: space.xl }}>
+          <View style={{ alignItems: 'center', gap: space.md, padding: space.xl, borderRadius: 28, backgroundColor: colors.surface, minWidth: 240 }}>
+            <ActivityIndicator size="large" color={colors.accent} />
+            <Text style={{ ...font.headline, color: colors.text }}>Reading your receipt…</Text>
+            <Text style={{ ...font.footnote, color: colors.textMuted, textAlign: 'center' }}>This takes a few seconds.</Text>
+          </View>
+        </View>
+      </Modal>
+    </Screen>
   );
 }

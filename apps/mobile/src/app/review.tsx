@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
-import { Alert, Image, Pressable, ScrollView, Share, Switch, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Alert, Image, Pressable, Share, Switch, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import {
   addItem, encodeOcrDump, formatAmount, reconcile, removeItem, setField, setItemDescription, setItemLineTotal,
   setItemQuantity, setTaxIncluded, type HeaderField, type Receipt,
 } from '@tably/core';
 import { Button } from '../components/Button';
+import { Callout } from '../components/Bits';
 import { Card, Section } from '../components/Card';
+import { Screen } from '../components/Screen';
 import { AmountField, TextField } from '../components/Fields';
 import { useTheme } from '../theme/ThemeProvider';
 import { getDraft, updateDraft, useDraft } from '../lib/draftStore';
@@ -34,7 +35,7 @@ function needsLook(r: Receipt, i: Receipt['items'][number]): boolean {
 const money2 = (m: number | null) => (m === null ? '—' : (m / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 
 export default function Review() {
-  const { colors, space, radius } = useTheme();
+  const { colors, space, radius, font, soft } = useTheme();
   const draft = useDraft();
   const [showImage, setShowImage] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -124,7 +125,11 @@ export default function Review() {
     if (!flagged(path) || (!reason && options.length === 0)) return null;
     return (
       <View style={{ gap: 6 }}>
-        {reason && <Text style={{ color: colors.warning, fontSize: 13 }}>{reason}</Text>}
+        {reason && (
+          <View style={{ padding: 10, borderRadius: 12, backgroundColor: soft.warning }}>
+            <Text style={{ ...font.footnote, color: colors.text }}>{reason}</Text>
+          </View>
+        )}
         {options.length > 0 && (
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
             {options.map((v) => (
@@ -187,12 +192,27 @@ export default function Review() {
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }}>
-      <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.md, paddingBottom: 160 }} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
-        <Text style={{ color: colors.text, fontSize: 28, fontWeight: '700', letterSpacing: -0.6 }}>{draft.editBillId ? 'Edit receipt' : 'Review receipt'}</Text>
-
+    <Screen
+      title={draft.editBillId ? 'Edit receipt' : 'Review receipt'}
+      footer={
+        <>
+        <Button size="lg" loading={creating} label={creating ? 'Saving…' : draft.editBillId ? 'Save changes' : 'Looks right · create bill'} onPress={() => {
+            if (r.total === null) {
+              // Nothing printed to check against: say what friends will split and let the person decide.
+              Alert.alert(
+                'No receipt total to check',
+                `There is no total on this receipt, so TABLY cannot double-check the items. Friends will split ${formatAmount(rec.computedTotal, r.currency)} (the items plus any charges). Continue?`,
+                [{ text: 'Go back', style: 'cancel' }, { text: 'Continue', onPress: () => void create() }],
+              );
+            } else void create();
+          }}
+          disabled={creating || r.items.length === 0 || r.items.some((i) => i.lineTotal === null || i.description.trim() === '')} />
+        <Text style={{ ...font.footnote, color: colors.textFaint, textAlign: 'center' }}>{draft.editBillId ? 'People on the link see the changes straight away.' : 'You will get a private link to share. Your edits are saved on this phone.'}</Text>
+              </>
+      }
+    >
         {draft.ocrError && (
-          <Text style={{ color: colors.warning }}>Text recognition did not run ({draft.ocrError}) Enter the receipt below.</Text>
+          <Callout tone="warning">Text recognition did not run ({draft.ocrError}) Enter the receipt below.</Callout>
         )}
 
         {/* Summary: what this receipt is, what it adds up to, and how much needs a look. */}
@@ -247,7 +267,9 @@ export default function Review() {
           return (
             <Card key={i.id} tone={look ? 'warning' : undefined}>
               <Pressable onPress={() => setOpenItems((o) => toggle(o, i.id))} accessibilityRole="button" accessibilityState={{ expanded: open }} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: space.sm }}>
-                <Text style={{ color: colors.textMuted, fontWeight: '600', minWidth: 28, fontSize: 15 }}>{i.quantity}×</Text>
+                <View style={{ minWidth: 36, paddingVertical: 3, paddingHorizontal: 8, borderRadius: 999, backgroundColor: colors.surfaceMuted, alignItems: 'center' }}>
+                  <Text style={{ ...font.caption, color: colors.textMuted, fontWeight: '700' }}>{i.quantity}×</Text>
+                </View>
                 <View style={{ flex: 1, gap: 2 }}>
                   <Text numberOfLines={open ? undefined : 2} style={{ color: i.description.trim() ? colors.text : colors.textFaint, fontSize: 16 }}>{i.description.trim() || 'Unnamed item'}</Text>
                   {!open && look && reason ? <Text numberOfLines={2} style={{ color: colors.warning, fontSize: 13 }}>{reason}</Text> : null}
@@ -298,7 +320,8 @@ export default function Review() {
         })}
         <Button
           label="Add item"
-          variant="quiet"
+          icon="plus"
+          variant="secondary"
           onPress={() => {
             const added = addItem(r);
             edit(added);
@@ -361,22 +384,6 @@ export default function Review() {
             Something wrong with the scan? Share what the scanner read
           </Text>
         )}
-      </ScrollView>
-
-      <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: space.lg, backgroundColor: colors.bg, borderTopColor: colors.border, borderTopWidth: 1, gap: space.sm }}>
-        <Button label={creating ? 'Saving…' : draft.editBillId ? 'Save changes' : 'Looks right · create bill'} onPress={() => {
-            if (r.total === null) {
-              // Nothing printed to check against: say what friends will split and let the person decide.
-              Alert.alert(
-                'No receipt total to check',
-                `There is no total on this receipt, so TABLY cannot double-check the items. Friends will split ${formatAmount(rec.computedTotal, r.currency)} (the items plus any charges). Continue?`,
-                [{ text: 'Go back', style: 'cancel' }, { text: 'Continue', onPress: () => void create() }],
-              );
-            } else void create();
-          }}
-          disabled={creating || r.items.length === 0 || r.items.some((i) => i.lineTotal === null || i.description.trim() === '')} />
-        <Text style={{ color: colors.textFaint, fontSize: 12, textAlign: 'center' }}>{draft.editBillId ? 'People on the link see the changes straight away.' : 'You will get a private link to share. Your edits are saved on this phone.'}</Text>
-      </View>
-    </SafeAreaView>
+    </Screen>
   );
 }

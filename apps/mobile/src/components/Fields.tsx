@@ -7,25 +7,27 @@ const fmt = (m: Minor | null) => (m === null ? '' : (m / 100).toFixed(2));
 
 type BaseProps = { label?: string; uncertain?: boolean; width?: number | `${number}%` };
 
-function useBorder(uncertain: boolean | undefined, invalid: boolean) {
-  const { colors } = useTheme();
-  if (invalid) return colors.danger;
-  return uncertain ? colors.warning : colors.border;
-}
-
 export function TextField({
-  label, value, onChange, uncertain, width, ...rest
+  label, value, onChange, uncertain, width, onFocus, onBlur, ...rest
 }: BaseProps & { value: string; onChange: (v: string) => void } & Omit<TextInputProps, 'value' | 'onChangeText' | 'onChange'>) {
-  const { colors, radius } = useTheme();
-  const border = useBorder(uncertain, false);
+  const { colors, radius, soft, font, dark } = useTheme();
+  const [focused, setFocused] = useState(false);
+  const border = uncertain ? colors.warning : focused ? colors.accent : 'transparent';
   return (
-    <View style={{ gap: 4, width }}>
-      {label && <Text style={{ color: uncertain ? colors.warning : colors.textFaint, fontSize: 13 }}>{label}{uncertain ? ' · check' : ''}</Text>}
+    <View style={{ gap: 6, width }}>
+      {label && <Text style={{ ...font.footnote, fontWeight: '500', color: uncertain ? colors.warning : colors.textMuted }}>{label}{uncertain ? ' · check' : ''}</Text>}
       <TextInput
         value={value}
         onChangeText={onChange}
         placeholderTextColor={colors.textFaint}
-        style={{ color: colors.text, backgroundColor: colors.surface, borderColor: border, borderWidth: 1.5, borderRadius: radius.sm, paddingHorizontal: 12, paddingVertical: 11, fontSize: 16 }}
+        selectionColor={colors.accent}
+        keyboardAppearance={dark ? 'dark' : 'light'}
+        onFocus={(e) => { setFocused(true); onFocus?.(e); }}
+        onBlur={(e) => { setFocused(false); onBlur?.(e); }}
+        style={{
+          color: colors.text, backgroundColor: uncertain ? soft.warning : colors.surfaceMuted, borderColor: border, borderWidth: 1.5,
+          borderRadius: radius.md - 2, paddingHorizontal: 14, paddingVertical: 12, fontSize: 16,
+        }}
         {...rest}
       />
     </View>

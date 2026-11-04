@@ -1,9 +1,11 @@
 import { useCallback, useState } from 'react';
-import { Alert, RefreshControl, ScrollView, Share, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { ActivityIndicator, Alert, Pressable, Share, Text, View } from 'react-native';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { formatAmount } from '@tably/core';
 import { Button } from '../../components/Button';
+import { Avatar, Badge, Callout, ProgressBar, Stat, type Tone } from '../../components/Bits';
+import { Card, ListRow, SectionTitle } from '../../components/Card';
+import { Screen } from '../../components/Screen';
 import { useTheme } from '../../theme/ThemeProvider';
 import {
   addPerson, closeBill, confirmPayment, getAdminBill, logReminders, rejectPayment, reopenBill, updateLink,
@@ -13,19 +15,19 @@ import { getAdminToken, shareUrl, updateShareToken } from '../../lib/myBills';
 import { startEditDraft } from '../../lib/draftStore';
 import { agoLabel, groupReminder, owing, reminderFor } from '../../lib/reminders';
 
-const LABEL: Record<string, string> = {
-  initiated: 'Payment started',
-  awaiting_confirmation: 'Says they paid',
-  verified: 'Paid · confirmed',
-  failed: 'Rejected',
-  expired: 'Expired',
-  cancelled: 'Cancelled',
+const LABEL: Record<string, { text: string; tone: Tone }> = {
+  initiated: { text: 'Payment started', tone: 'neutral' },
+  awaiting_confirmation: { text: 'Says they paid', tone: 'warning' },
+  verified: { text: 'Paid · confirmed', tone: 'success' },
+  failed: { text: 'Rejected', tone: 'danger' },
+  expired: { text: 'Expired', tone: 'neutral' },
+  cancelled: { text: 'Cancelled', tone: 'neutral' },
 };
 
 /** Creator dashboard. Money is "confirmed" only by the creator tapping Confirm after checking their own account. */
 export default function BillScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { colors, space, radius } = useTheme();
+  const { colors, space, font } = useTheme();
   const [bill, setBill] = useState<AdminBill | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -119,10 +121,14 @@ export default function BillScreen() {
 
   if (!bill) {
     return (
-      <SafeAreaView style={{ flex: 1, padding: space.lg, backgroundColor: colors.bg }}>
-        <Text style={{ color: error ? colors.danger : colors.textMuted, marginTop: space.xl }}>{error ?? 'Loading…'}</Text>
-        <Button label="Back" variant="quiet" onPress={() => router.back()} />
-      </SafeAreaView>
+      <Screen scroll={false}>
+        {error ? <Callout tone="danger">{error}</Callout> : (
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: space.md }}>
+            <ActivityIndicator size="large" color={colors.accent} />
+            <Text style={{ ...font.callout, color: colors.textMuted }}>Loading your bill…</Text>
+          </View>
+        )}
+      </Screen>
     );
   }
   const cur = bill.currency;
@@ -130,89 +136,105 @@ export default function BillScreen() {
   const closed = bill.status === 'closed';
   const waiting = bill.payments.filter((p) => p.status === 'awaiting_confirmation');
   const owes = owing(bill);
-  const stat = (label: string, v: number) => (
-    <View style={{ flex: 1 }}>
-      <Text style={{ color: colors.textFaint, fontSize: 12 }}>{label}</Text>
-      <Text style={{ color: colors.text, fontSize: 17, fontWeight: '600' }}>{formatAmount(v, cur)}</Text>
-    </View>
-  );
-  const h2 = { color: colors.text, fontSize: 18, fontWeight: '600' as const, marginTop: space.sm };
+  const paidShare = t.total > 0 ? t.collected / t.total : 0;
+  const state: { label: string; tone: Tone } = closed
+    ? { label: 'Closed', tone: 'neutral' }
+    : bill.share_disabled ? { label: 'Open · link is off', tone: 'warning' } : { label: 'Open', tone: 'success' };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }}>
-      <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.md }} refreshControl={<RefreshControl refreshing={false} onRefresh={load} />}>
-        <View>
-          <Text style={{ color: colors.text, fontSize: 28, fontWeight: '700', letterSpacing: -0.6 }}>{bill.store}</Text>
-          <Text style={{ color: closed ? colors.textFaint : bill.share_disabled ? colors.warning : colors.success, fontSize: 13 }}>
-            {closed ? 'Closed' : bill.share_disabled ? 'Open · link is off' : 'Open'}
+    <Screen title={bill.store} subtitle={<Badge label={state.label} tone={state.tone} />} onRefresh={load}>
+      {/* The money at a glance. */}
+      <Card style={{ gap: space.md }}>
+        <View style={{ gap: 2 }}>
+          <Text style={{ ...font.caption, color: colors.textFaint }}>Collected so far</Text>
+          <Text style={{ ...font.largeTitle, color: colors.text }}>
+            {formatAmount(t.collected, cur)} <Text style={{ ...font.callout, color: colors.textMuted, fontWeight: '500' }}>of {formatAmount(t.total, cur)}</Text>
           </Text>
         </View>
-        <View style={{ flexDirection: 'row', gap: space.sm }}>{stat('Bill total', t.total)}{stat('Claimed', t.assigned)}{stat('Unclaimed', t.unassigned)}</View>
-        <View style={{ flexDirection: 'row', gap: space.sm }}>{stat('Confirmed paid', t.collected)}{stat('Waiting on you', t.awaiting)}{stat('Outstanding', t.outstanding)}</View>
-        {!bill.payee && <Text style={{ color: colors.warning }}>No payment details on this bill, so friends cannot pay yet.</Text>}
+        <ProgressBar value={paidShare} tone={paidShare >= 1 ? 'success' : 'accent'} />
+        <View style={{ flexDirection: 'row', gap: space.sm }}>
+          <Stat label="Waiting on you" value={formatAmount(t.awaiting, cur)} tone={t.awaiting > 0 ? 'warning' : undefined} />
+          <Stat label="Still to collect" value={formatAmount(t.outstanding, cur)} />
+          <Stat label="Not picked yet" value={formatAmount(t.unassigned, cur)} tone={t.unassigned > 0 ? 'warning' : undefined} />
+        </View>
+      </Card>
+      {!bill.payee && <Callout tone="warning">No payment details on this bill, so friends cannot pay yet.</Callout>}
 
-        {waiting.length > 0 && <Text style={h2}>Needs your check</Text>}
-        {waiting.map((p) => (
-          <View key={p.id} style={{ padding: space.md, borderRadius: radius.md, backgroundColor: colors.surface, borderColor: colors.warning, borderWidth: 1.5, gap: space.sm }}>
-            <Text style={{ color: colors.text, fontWeight: '600' }}>{p.participant_name} says they sent {formatAmount(p.amount, cur)}</Text>
-            <Text style={{ color: colors.textMuted, fontSize: 13 }}>Reference {p.reference}{p.payer_note ? ` · theirs: ${p.payer_note}` : ''}</Text>
-            <Text style={{ color: colors.textFaint, fontSize: 12 }}>Not confirmed until you check your account and tap below.</Text>
-            <Button label="Check and confirm" onPress={() => ask(p, cur)} disabled={busy} />
-          </View>
-        ))}
-
-        <Text style={h2}>People</Text>
-        {bill.participants.length === 0 && <Text style={{ color: colors.textMuted }}>Nobody has joined yet. Share the link.</Text>}
-        {bill.participants.map((p) => (
-          <View key={p.id} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: space.sm }}>
+      {waiting.length > 0 && <SectionTitle>Needs your check</SectionTitle>}
+      {waiting.map((p) => (
+        <Card key={p.id} tone="warning" style={{ gap: space.md }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+            <Avatar name={p.participant_name} />
             <View style={{ flex: 1 }}>
-              <Text onPress={() => router.push({ pathname: '/person', params: { id, pid: p.id } })} style={{ color: colors.text, fontSize: 16 }}>{p.name} ›</Text>
-              <Text style={{ color: p.payment?.status === 'verified' ? colors.success : colors.textFaint, fontSize: 13 }}>
-                {p.payment ? LABEL[p.payment.status] ?? p.payment.status : 'Not paid'}
-                {p.reminder_count > 0 ? ` · reminded ${agoLabel(p.last_reminded_at)}` : ''}
-              </Text>
+              <Text style={{ ...font.headline, color: colors.text }}>{p.participant_name} says they sent {formatAmount(p.amount, cur)}</Text>
+              <Text style={{ ...font.footnote, color: colors.textMuted }}>Reference {p.reference}{p.payer_note ? ` · theirs: ${p.payer_note}` : ''}</Text>
             </View>
-            {!closed && owes.some((o) => o.id === p.id) && (
-              <Text onPress={() => void remind(bill, [p], reminderFor(bill, p))} style={{ color: colors.accent, fontWeight: '600' }}>Remind</Text>
-            )}
-            <Text style={{ color: colors.textMuted, fontSize: 16, minWidth: 80, textAlign: 'right' }}>{formatAmount(p.total, cur)}</Text>
           </View>
-        ))}
-        {!closed && owes.length > 1 && (
-          <Button label={`Remind ${owes.length} people`} variant="quiet" onPress={() => void remind(bill, owes, groupReminder(bill, owes))} disabled={busy} />
-        )}
-        {!closed && (
-          <Button
-            label="Add someone"
-            variant="quiet"
-            onPress={() => Alert.prompt('Add someone', 'For a friend who is not using the link. You will pick their items.', (name) => {
-              if (name?.trim()) void act((tk) => addPerson(id, tk, name.trim()));
-            })}
-            disabled={busy}
-          />
-        )}
-        <Text style={{ color: colors.textFaint, fontSize: 12 }}>
-          TABLY cannot send texts or notifications. Remind opens your share sheet (WhatsApp, iMessage) so you send the message yourself.
-        </Text>
+          <Text style={{ ...font.footnote, color: colors.textFaint }}>It is not confirmed until you check your account and tap below.</Text>
+          <Button label="Check and confirm" icon="check" onPress={() => ask(p, cur)} disabled={busy} />
+        </Card>
+      ))}
 
-        <Text style={h2}>Manage</Text>
+      <SectionTitle right={!closed ? <Text onPress={() => Alert.prompt('Add someone', 'For a friend who is not using the link. You will pick their items.', (name) => { if (name?.trim()) void act((tk) => addPerson(id, tk, name.trim())); })} style={{ ...font.callout, color: colors.accent, fontWeight: '600' }}>Add someone</Text> : undefined}>
+        People
+      </SectionTitle>
+      {bill.participants.length === 0 ? (
+        <Card>
+          <Text style={{ ...font.callout, color: colors.textMuted }}>Nobody has joined yet. Share the link and people will show up here as they pick their items.</Text>
+          <Button label="Share link" icon="share" variant="secondary" onPress={() => void Share.share({ message: `Pick what you had on our bill at ${bill.store}: ${shareUrl(bill.share_token)}` })} />
+        </Card>
+      ) : (
+        <Card style={{ paddingVertical: space.xs, gap: 0 }}>
+          {bill.participants.map((p, n) => {
+            const pay = p.payment ? LABEL[p.payment.status] ?? { text: p.payment.status, tone: 'neutral' as Tone } : { text: 'Not paid', tone: 'neutral' as Tone };
+            const canRemind = !closed && owes.some((o) => o.id === p.id);
+            return (
+              <View key={p.id} style={{ paddingVertical: 12, borderBottomWidth: n === bill.participants.length - 1 ? 0 : 1, borderBottomColor: colors.border, gap: 8 }}>
+                <Pressable onPress={() => router.push({ pathname: '/person', params: { id, pid: p.id } })} accessibilityRole="button" style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+                  <Avatar name={p.name} />
+                  <View style={{ flex: 1, gap: 4 }}>
+                    <Text style={{ ...font.headline, color: colors.text }}>{p.name}</Text>
+                    <Badge label={pay.text} tone={pay.tone} />
+                  </View>
+                  <Text style={{ ...font.number, color: colors.text }}>{formatAmount(p.total, cur)}</Text>
+                  <Text style={{ color: colors.textFaint }}>›</Text>
+                </Pressable>
+                {canRemind && (
+                  <Text onPress={() => void remind(bill, [p], reminderFor(bill, p))} style={{ ...font.footnote, color: colors.accent, fontWeight: '600', marginLeft: 52 }}>
+                    Remind {p.name}{p.reminder_count > 0 ? ` · reminded ${agoLabel(p.last_reminded_at)}` : ''}
+                  </Text>
+                )}
+              </View>
+            );
+          })}
+        </Card>
+      )}
+      {!closed && owes.length > 1 && (
+        <Button label={`Remind ${owes.length} people`} icon="bell" variant="secondary" onPress={() => void remind(bill, owes, groupReminder(bill, owes))} disabled={busy} />
+      )}
+      <Text style={{ ...font.footnote, color: colors.textFaint }}>
+        TABLY cannot send texts or notifications. Remind opens your share sheet (WhatsApp, iMessage) so you send the message yourself.
+      </Text>
+
+      <SectionTitle>Manage</SectionTitle>
+      <Card style={{ paddingVertical: space.xs, gap: 0 }}>
         {!closed && (
-          <Button
-            label="Edit receipt"
-            variant="quiet"
+          <ListRow
+            icon="edit"
+            title="Edit receipt"
+            detail="Fix an item or price. People on the link see the change."
             onPress={() => {
               startEditDraft(bill);
               router.push('/review');
             }}
           />
         )}
-        <Button label="Share link" onPress={() => void Share.share({ message: `Pick what you had on our bill at ${bill.store}: ${shareUrl(bill.share_token)}` })} />
-        <Button label="Link settings" variant="quiet" onPress={() => linkMenu(bill)} disabled={busy} />
+        <ListRow icon="share" title="Share link" onPress={() => void Share.share({ message: `Pick what you had on our bill at ${bill.store}: ${shareUrl(bill.share_token)}` })} />
+        <ListRow icon="link" title="Link settings" detail={bill.share_disabled ? 'The link is off' : 'Turn off, extend or replace the link'} onPress={() => linkMenu(bill)} disabled={busy} />
         {closed
-          ? <Button label="Reopen bill" variant="quiet" onPress={() => void act((tk) => reopenBill(id, tk))} disabled={busy} />
-          : <Button label="Close bill" variant="quiet" onPress={() => closeFlow(bill)} disabled={busy} />}
-        <Button label="Back" variant="quiet" onPress={() => router.back()} />
-      </ScrollView>
-    </SafeAreaView>
+          ? <ListRow last icon="refresh" title="Reopen bill" onPress={() => void act((tk) => reopenBill(id, tk))} disabled={busy} />
+          : <ListRow last icon="lock" title="Close bill" detail="Nobody can pick or pay after this. You can reopen it." tone="danger" onPress={() => closeFlow(bill)} disabled={busy} />}
+      </Card>
+    </Screen>
   );
 }
