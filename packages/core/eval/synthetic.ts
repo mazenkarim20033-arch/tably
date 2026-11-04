@@ -322,7 +322,7 @@ function camera(r: Rand): Camera {
   };
 }
 
-function render(rows: PrintedRow[], cam: Camera, r: Rand): OcrLine[] {
+function render(rows: PrintedRow[], cam: Camera, r: Rand): { lines: OcrLine[]; rowOf: number[] } {
   const pitch = 0.026;
   const top = 0.06;
   const map = (x: number, y: number): [number, number] => {
@@ -338,8 +338,9 @@ function render(rows: PrintedRow[], cam: Camera, r: Rand): OcrLine[] {
     return [(W / 2 + dx * Math.cos(th) - dy * Math.sin(th)) / W, (H / 2 + dx * Math.sin(th) + dy * Math.cos(th)) / H];
   };
   const out: OcrLine[] = [];
+  const rowIds: number[] = [];
   let y = top;
-  for (const row of rows) {
+  for (const [rowIndex, row] of rows.entries()) {
     const size = Math.max(...row.map((p) => p.size ?? 1));
     // Pieces left to right with their page extents.
     const placed = row
@@ -383,11 +384,13 @@ function render(rows: PrintedRow[], cam: Camera, r: Rand): OcrLine[] {
         quad: corners.flat(),
         words,
       });
+      rowIds.push(rowIndex);
     }
     y += pitch * LINE * Math.max(1, size * 0.9);
   }
   // Vision does not return observations in reading order.
-  return out.sort(() => r() - 0.5);
+  const order = out.map((_, i) => i).sort(() => r() - 0.5);
+  return { lines: order.map((i) => out[i]!), rowOf: order.map((i) => rowIds[i]!) };
 }
 
 /** OCR damage: one digit of one amount misread (with the right reading as a runner-up, sometimes), a lost fragment. */
@@ -423,7 +426,7 @@ export function syntheticSet(count: number, seed = 20251103): Fixture[] {
     const name = TEMPLATE_NAMES[n % TEMPLATE_NAMES.length]!;
     const built = TEMPLATES[name]!(r);
     const cam = camera(r);
-    const damaged = corrupt(render(built.rows, cam, r), r);
+    const damaged = corrupt(render(built.rows, cam, r).lines, r);
     const tilt = Math.abs(cam.deg) > 3 || Math.abs(cam.keystone) > 0.15 || cam.curl > 0.008 ? 'distorted' : 'mild';
     out.push({
       id: `synthetic-${name}-${n}`,
@@ -446,4 +449,15 @@ function toDump(l: OcrLine) {
     ...(l.quad ? { q: l.quad } : {}),
     ...(l.words ? { wd: l.words.map((w) => [w.text, w.x, w.y, w.w, w.h]) } : {}),
   };
+}
+
+/** Pages for testing layout: the observations and, for each, the printed row it came from. */
+export function syntheticPages(count: number, seed = 777): Array<{ name: string; lines: OcrLine[]; rowOf: number[]; cam: Camera }> {
+  return Array.from({ length: count }, (_, n) => {
+    const r = rng(seed + n * 104729);
+    const name = TEMPLATE_NAMES[n % TEMPLATE_NAMES.length]!;
+    const built = TEMPLATES[name]!(r);
+    const cam = camera(r);
+    return { name, cam, ...render(built.rows, cam, r) };
+  });
 }

@@ -1,6 +1,40 @@
 # TABLY receipt engine: assessment and redesign
 
-Status: milestone 1 done (full scanner export, evaluation harness, baseline). The engine itself is unchanged.
+Status: milestone 2 done (layout engine in `packages/core/src/engine/`). The app still uses the old reader; it
+switches once the new engine beats it on real held-out receipts.
+
+## Milestone 2: layout (stage C)
+
+`buildLayout` rebuilds printed lines from the scanner's geometry, not one global tilt:
+
+- **Model:** the slope of the printed lines is a + b·x + c·y + d·x·y (rotation, curl, keystone). It is fitted
+  robustly to each observation's measured slope (from its word centres, else its corners), then integrated to get
+  each point's vertical drift.
+- **Lines:** observations are grouped by their unbent height. Two observations that overlap horizontally are never on
+  one line, so a caption under a name stays a separate line.
+- **Columns:** numbers whose right edges line up, as slanted fitted lines with one number per line, labelled as
+  price columns or quantity columns.
+- **No geometry:** with no usable geometry (old dumps, typed fixtures) it reports `oriented: false` and the engine
+  uses the old reader unchanged.
+
+Results:
+- **Synthetic layout test:** 100% of 3,638 printed rows rebuilt exactly; 99.4% with noisy corners and word boxes.
+- **End to end on the synthetic holdout:** the new layout feeding the old meaning and pairing stages.
+
+| | baseline | milestone 2 |
+|---|---|---|
+| item recall | 80.9% | 88.4% |
+| price accuracy | 90.6% | 93.3% |
+| prices on the wrong item | 99 | 65 |
+| false items | 44 | 35 |
+| silent wrong fields | 1,325 | 927 |
+| exact receipts | 37% | 37% |
+
+Exact receipts did not change: what still fails is meaning and pairing (price before the name, "2 @" lines, wrapped
+names, unfamiliar labels such as "V.A.T"), which is milestone 3. The remaining prices on the wrong item are all in
+wrapped names.
+
+Not yet known: how clean real Vision corners and word boxes are. The first dumps from the new build will show it.
 
 ## Baseline (current parser, before the redesign)
 

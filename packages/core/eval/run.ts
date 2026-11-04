@@ -10,6 +10,7 @@ import { readdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseReceipt } from '../src/parseReceipt';
+import { readReceipt } from '../src/engine';
 import { toLines, type Fixture } from './fixture';
 import { score, summarize, type Score } from './metrics';
 import { syntheticSet } from './synthetic';
@@ -33,11 +34,15 @@ function loadFixtures(): Fixture[] {
 
 interface Result { fx: Fixture; s: Score; ms: number }
 
-function run(fixtures: Fixture[]): Result[] {
+// The engine being built, and the reader it replaces (run live so both see identical inputs).
+const ENGINE = process.argv.includes('--old') ? parseReceipt : readReceipt;
+const ENGINE_NAME = process.argv.includes('--old') ? 'parseReceipt (pre-redesign)' : 'engine (layout + old semantics)';
+
+function run(fixtures: Fixture[], read = ENGINE): Result[] {
   return fixtures.map((fx) => {
     const lines = toLines(fx.input);
     const t0 = performance.now();
-    const rc = parseReceipt(lines);
+    const rc = read(lines);
     const ms = performance.now() - t0;
     return { fx, s: score(rc, fx.truth), ms };
   });
@@ -54,7 +59,7 @@ const sets = {
   'synthetic-holdout': synthetic,
 };
 const report = {
-  engine: 'parseReceipt (pre-redesign)',
+  engine: ENGINE_NAME,
   sets: Object.fromEntries(Object.entries(sets).map(([k, v]) => [k, summarize(v)])),
   syntheticByTemplate: Object.fromEntries(
     [...new Set(synthetic.map((x) => x.fx.tags[0]!))].map((t) => [t, summarize(synthetic.filter((x) => x.fx.tags[0] === t))]),
