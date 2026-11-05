@@ -226,3 +226,22 @@ Inspected without downloading images in bulk (range reads of the zip indexes and
 
 Harness started (no app changes): `packages/core/eval/advanced/metrics.ts` (exact accuracy, correction and false-correction
 rates, decline rate, calibration error, Wilson intervals, shop-split check) with tests, and `build_labels.py`.
+
+## 14. Baseline round 1 (Apple Vision text from the owner's phone, engine unchanged)
+
+Four receipts so far. **Three of them (Table 9, Burak, Rehab City) were already used while developing the engine, so they
+are development examples, not held-out tests.** Only one (a seafood restaurant, 2026) is new. The engine was not changed
+during this round, so these are baseline numbers. The receipt files stay on the owner's machine (git-ignored).
+
+| Receipt | Totals (total, subtotal, VAT/tax, service) | Items | What went wrong |
+| --- | --- | --- | --- |
+| Table 9 (dev) | 4 of 4 | 8 of 9 prices, 8 of 9 quantities | Vision read a price `60.00` as `80.00`; read a quantity `2` as `1` (undetectable: no unit price printed). |
+| Burak (dev) | total, VAT, service right; **subtotal missing** | 14 of 14 | Vision printed `11,185.00` as `11.185.00`, which the engine rejects as garbage. The visible items add to 9,985 but the receipt's own subtotal is 11,185 (a 1,200 gap on the paper itself), so a mismatch is correct. False yellow flags on service, VAT and one item. |
+| Oklet Samok (new) | 4 of 4 | 6 of 7 | A Pepsi row (80.00) was dropped because Vision read its Arabic name as Cyrillic letters, so the engine found no name and moved the whole row to "rows we could not read". Four weighed items got a false yellow quantity flag. |
+| Rehab City (dev) | all correct | 9 of 9 | none (same text as the existing development fixture). |
+
+Finding: of the 5 problems, **3 are deterministic engine bugs** (a comma read as a dot, a name in an unexpected script
+dropping a valid row, a blank quantity cell on weighed rows) that code can fix at no cost. Only **2 are true OCR misreads**
+(60 read as 80; a quantity 2 read as 1), and only one of those can be caught by arithmetic. So the pool a specialist
+model could improve is small so far (about 2 wrong values in roughly 45 priced fields). More unseen receipts are needed
+before this means anything statistically.
