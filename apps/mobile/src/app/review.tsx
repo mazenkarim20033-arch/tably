@@ -178,6 +178,26 @@ export default function Review() {
     <View style={{ gap: 6 }}>
       <AmountField label={label} value={r[k]} uncertain={flagged(k)} onChange={(v) => edit(setField(r, k, k === 'discounts' ? (v === null ? 0 : -Math.abs(v)) : v))} />
       {k !== 'discounts' && dispute(k, r[k], r.fieldChoices?.[k], (v) => edit(setField(r, k, v)))}
+      {k === 'tip' && (
+        // A tip is often added by hand at the table: one tap puts a percentage of the items in.
+        <View style={{ flexDirection: 'row', gap: space.sm, flexWrap: 'wrap' }}>
+          {[10, 12, 15, 20].map((pct) => {
+            const value = Math.round(((r.subtotal ?? rec.itemsSum) * pct) / 100);
+            const on = r.tip === value && value > 0;
+            return (
+              <Pressable key={pct} accessibilityRole="button" accessibilityState={{ selected: on }} onPress={() => {
+                // The printed total did not include a tip written in by hand, so the total moves with it.
+                const next = on ? 0 : value;
+                const withTip = setField(r, 'tip', next === 0 ? null : next);
+                edit(r.total === null ? withTip : setField(withTip, 'total', r.total + next - (r.tip ?? 0)));
+              }}
+                style={{ paddingVertical: 8, paddingHorizontal: 14, borderRadius: radius.pill, backgroundColor: on ? colors.accent : colors.surfaceMuted }}>
+                <Text style={{ ...font.callout, fontWeight: '600', color: on ? '#fff' : colors.text }}>{pct}%</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
     </View>
   );
   const retake = () => {

@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { currentLang, setLang, useLang } from './i18n';
 
 const HUES = ['#6D5BF7', '#22A6C8', '#E8588D', '#F29B38', '#3FB68B', '#8A6DF0', '#D9534F', '#4C7BF4'];
 
@@ -39,10 +40,14 @@ export function Mark({ size = 28 }: { size?: number }) {
 }
 
 export function Brand({ right }: { right?: ReactNode }) {
+  const lang = useLang();
   return (
     <header className="brandbar">
       <span className="brand"><Mark size={30} /><span>TABLY</span></span>
-      {right}
+      <span className="brandright">
+        {right}
+        <button type="button" className="langbtn" onClick={() => setLang(lang === 'ar' ? 'en' : 'ar')} aria-label={lang === 'ar' ? 'English' : 'العربية'}>{lang === 'ar' ? 'EN' : 'عربي'}</button>
+      </span>
     </header>
   );
 }
@@ -61,5 +66,5 @@ export function Tick({ tone = 'success' }: { tone?: 'success' | 'warning' | 'dan
 
 export const niceDate = (iso: string) => {
   const d = new Date(`${iso}T12:00:00`);
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString(currentLang() === 'ar' ? 'ar-EG-u-nu-latn' : 'en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 };

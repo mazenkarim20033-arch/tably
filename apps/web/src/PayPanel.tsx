@@ -4,17 +4,19 @@ import {
   ApiError, cancelPayment, markPaid, startPayment, type BillView, type ExtraMethod, type Me, type PaymentStatus, type PersonTotal,
 } from './api';
 import { Tick } from './ui';
+import { t, useLang } from './i18n';
 
 /** Plain-language status. "Paid" is shown only for verified payments. */
-export const STATUS_LABEL: Record<PaymentStatus | 'unpaid', string> = {
-  unpaid: 'Not paid',
-  initiated: 'Payment started',
-  awaiting_confirmation: 'Waiting for confirmation',
-  verified: 'Paid · confirmed',
-  failed: 'Not confirmed',
-  expired: 'Expired',
-  cancelled: 'Cancelled',
-};
+export const statusLabel = (s: PaymentStatus | 'unpaid'): string =>
+  ({
+    unpaid: t('Not paid'),
+    initiated: t('Payment started'),
+    awaiting_confirmation: t('Waiting for confirmation'),
+    verified: t('Paid · confirmed'),
+    failed: t('Not confirmed'),
+    expired: t('Expired'),
+    cancelled: t('Cancelled'),
+  })[s];
 
 export const statusOf = (p: PersonTotal): PaymentStatus | 'unpaid' => p.payment?.status ?? 'unpaid';
 
@@ -34,18 +36,18 @@ function optionsFor(bill: BillView): Option[] {
   if (!p) return [];
   const out: Option[] = [];
   if (p.instapay_address || p.instapay_phone || p.instapay_link) {
-    out.push({ key: 'instapay', kind: 'instapay', name: 'InstaPay', hint: p.instapay_link ? 'Opens InstaPay for you' : 'Send from any bank app' });
+    out.push({ key: 'instapay', kind: 'instapay', name: 'InstaPay', hint: p.instapay_link ? t('Opens InstaPay for you') : t('Send from any bank app') });
   }
   (p.methods ?? []).forEach((m, i) => {
     if (m.kind === 'telda') out.push({ key: `telda${i}`, kind: 'telda', name: 'Telda', hint: m.value ?? '', extra: m });
-    else if (m.kind === 'wallet') out.push({ key: `wallet${i}`, kind: 'wallet', name: m.label || 'Mobile wallet', hint: m.value ?? '', extra: m });
-    else if (m.kind === 'cash') out.push({ key: `cash${i}`, kind: 'cash', name: 'Cash', hint: 'Pay in person', extra: m });
-    else out.push({ key: `other${i}`, kind: 'other', name: m.label || 'Other', hint: m.value ?? '', extra: m });
+    else if (m.kind === 'wallet') out.push({ key: `wallet${i}`, kind: 'wallet', name: m.label || t('Mobile wallet'), hint: m.value ?? '', extra: m });
+    else if (m.kind === 'cash') out.push({ key: `cash${i}`, kind: 'cash', name: t('Cash'), hint: t('Pay in person'), extra: m });
+    else out.push({ key: `other${i}`, kind: 'other', name: m.label || t('Other'), hint: m.value ?? '', extra: m });
   });
   return out;
 }
 
-function CopyButton({ value, label = 'Copy', onCopied }: { value: string; label?: string; onCopied?: () => void }) {
+function CopyButton({ value, label = t('Copy'), onCopied }: { value: string; label?: string; onCopied?: () => void }) {
   const [done, setDone] = useState(false);
   return (
     <button
@@ -60,7 +62,7 @@ function CopyButton({ value, label = 'Copy', onCopied }: { value: string; label?
         } catch { /* clipboard blocked */ }
       }}
     >
-      {done ? 'Copied' : label}
+      {done ? t('Copied') : label}
     </button>
   );
 }
@@ -83,6 +85,7 @@ function CopyRow({ label, value, onCopied }: { label: string; value: string; onC
 export function PayPanel({ token, me, bill, mine, onClose, onChanged }: {
   token: string; me: Me; bill: BillView; mine: PersonTotal; onClose: () => void; onChanged: () => void;
 }) {
+  useLang();
   const [note, setNote] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
@@ -97,7 +100,7 @@ export function PayPanel({ token, me, bill, mine, onClose, onChanged }: {
   const live = mine.payment && ['initiated', 'awaiting_confirmation', 'verified'].includes(mine.payment.status) ? mine.payment : null;
   const status = statusOf(mine);
   const payee = bill.payee;
-  const payeeName = payee?.name ?? 'the bill creator';
+  const payeeName = payee?.name ?? t('The bill creator');
   const amount = live?.amount ?? mine.total;
   const away = () => { wentAway.current = true; };
 
@@ -109,7 +112,7 @@ export function PayPanel({ token, me, bill, mine, onClose, onChanged }: {
       onChanged();
       after?.();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Something went wrong. Please try again.');
+      setError(e instanceof ApiError ? e.message : t('Something went wrong. Please try again.'));
     }
     setWorking(false);
   }
@@ -138,8 +141,8 @@ export function PayPanel({ token, me, bill, mine, onClose, onChanged }: {
 
   const amountRow = (
     <div className="amountrow">
-      <div><small>Amount to send</small><strong>{plain(amount)} <em>{cur}</em></strong></div>
-      <CopyButton value={plain(amount)} label="Copy amount" onCopied={away} />
+      <div><small>{t('Amount to send')}</small><strong>{plain(amount)} <em>{cur}</em></strong></div>
+      <CopyButton value={plain(amount)} label={t('Copy amount')} onCopied={away} />
     </div>
   );
 
@@ -151,14 +154,14 @@ export function PayPanel({ token, me, bill, mine, onClose, onChanged }: {
             {amountRow}
             {payee?.instapay_link ? (
               <a className="primary-btn linkstyle" href={payee.instapay_link} target="_blank" rel="noopener noreferrer" onClick={away}>
-                Open InstaPay to pay {payeeName}
+                {t('Open InstaPay to pay {name}', { name: payeeName })}
               </a>
             ) : null}
             {(payee?.instapay_address || payee?.instapay_phone) && (
               <>
-                {payee?.instapay_link && <p className="or">or send to</p>}
-                {payee?.instapay_address && <CopyRow label="InstaPay address" value={payee.instapay_address} onCopied={away} />}
-                {payee?.instapay_phone && <CopyRow label="Phone number" value={payee.instapay_phone} onCopied={away} />}
+                {payee?.instapay_link && <p className="or">{t('or send to')}</p>}
+                {payee?.instapay_address && <CopyRow label={t('InstaPay address')} value={payee.instapay_address} onCopied={away} />}
+                {payee?.instapay_phone && <CopyRow label={t('Phone number')} value={payee.instapay_phone} onCopied={away} />}
               </>
             )}
           </>
@@ -167,23 +170,23 @@ export function PayPanel({ token, me, bill, mine, onClose, onChanged }: {
         return (
           <>
             {amountRow}
-            <CopyRow label="Telda tag or number" value={o.extra?.value ?? ''} onCopied={away} />
-            <p className="hint">Open Telda, search for {payeeName}, and send exactly this amount.</p>
+            <CopyRow label={t('Telda tag or number')} value={o.extra?.value ?? ''} onCopied={away} />
+            <p className="hint">{t('Open Telda, search for {name}, and send exactly this amount.', { name: payeeName })}</p>
           </>
         );
       case 'wallet':
         return (
           <>
             {amountRow}
-            <CopyRow label={`${o.name} number`} value={o.extra?.value ?? ''} onCopied={away} />
-            <p className="hint">Open your wallet app and send exactly this amount to this number.</p>
+            <CopyRow label={t('{name} number', { name: o.name })} value={o.extra?.value ?? ''} onCopied={away} />
+            <p className="hint">{t('Open your wallet app and send exactly this amount to this number.')}</p>
           </>
         );
       case 'cash':
         return (
           <div className="cashcard">
-            <strong>Hand {formatAmount(amount, cur)} to {payeeName}</strong>
-            <span>They mark it paid once they have it.</span>
+            <strong>{t('Hand {amount} to {name}', { amount: formatAmount(amount, cur), name: payeeName })}</strong>
+            <span>{t('They mark it paid once they have it.')}</span>
           </div>
         );
       default:
@@ -207,35 +210,34 @@ export function PayPanel({ token, me, bill, mine, onClose, onChanged }: {
         {status === 'verified' && (
           <>
             <Tick tone="success" />
-            <h2>Paid · confirmed</h2>
-            <p className="sub">{payeeName} confirmed they received {formatAmount(mine.payment!.amount, cur)}. You are all set.</p>
+            <h2>{t('Paid · confirmed')}</h2>
+            <p className="sub">{t('{name} confirmed they received {amount}. You are all set.', { name: payeeName, amount: formatAmount(mine.payment!.amount, cur) })}</p>
           </>
         )}
 
         {status === 'awaiting_confirmation' && (
           <>
             <Tick tone="warning" />
-            <h2>Waiting for confirmation</h2>
+            <h2>{t('Waiting for confirmation')}</h2>
             <p className="sub">
-              You said you sent {formatAmount(mine.payment!.amount, cur)}. It counts as paid once {payeeName} sees it in
-              their account and confirms.
+              {t('You said you sent {amount}. It counts as paid once {name} sees it in their account and confirms.', { amount: formatAmount(mine.payment!.amount, cur), name: payeeName })}
             </p>
-            <p className="hint">Tapped by mistake, or forgot an item? Undo, change your items, then pay again. Only undo if you haven't sent the money.</p>
+            <p className="hint">{t("Tapped by mistake, or forgot an item? Undo, change your items, then pay again. Only undo if you haven't sent the money.")}</p>
             <button className="quiet" disabled={working} onClick={() => run(() => cancelPayment(token, me, mine.payment!.id), onClose)}>
-              Undo, I haven't paid
+              {t("Undo, I haven't paid")}
             </button>
           </>
         )}
 
         {(status === 'initiated' || status === 'unpaid' || status === 'failed' || status === 'expired' || status === 'cancelled') && (
           <>
-            <h2>{needsMenu ? `Pay ${formatAmount(amount, cur)}` : `Send ${formatAmount(amount, cur)}`}</h2>
-            {status === 'failed' && <p className="error">{payeeName} could not find your last payment. Send it again or ask them.</p>}
-            {status === 'expired' && <p className="error">The last attempt timed out. You can start again.</p>}
+            <h2>{needsMenu ? t('Pay {amount}', { amount: formatAmount(amount, cur) }) : t('Send {amount}', { amount: formatAmount(amount, cur) })}</h2>
+            {status === 'failed' && <p className="error">{t('{name} could not find your last payment. Send it again or ask them.', { name: payeeName })}</p>}
+            {status === 'expired' && <p className="error">{t('The last attempt timed out. You can start again.')}</p>}
 
             {needsMenu ? (
               <>
-                <p className="sub" style={{ marginTop: -6 }}>How do you want to pay {payeeName}?</p>
+                <p className="sub" style={{ marginTop: -6 }}>{t('How do you want to pay {name}?', { name: payeeName })}</p>
                 <ul className="methodlist">
                   {options.map((o) => (
                     <li key={o.key}>
@@ -247,19 +249,19 @@ export function PayPanel({ token, me, bill, mine, onClose, onChanged }: {
                     </li>
                   ))}
                 </ul>
-                <button className="quiet" disabled={working} onClick={close}>{live ? 'Cancel payment' : 'Close'}</button>
+                <button className="quiet" disabled={working} onClick={close}>{live ? t('Cancel payment') : t('Close')}</button>
               </>
             ) : (
               <>
                 {options.length > 1 && (
-                  <button type="button" className="linklike backlink" onClick={() => { setChosenKey(null); setReturned(false); }}>‹ Other ways to pay</button>
+                  <button type="button" className="linklike backlink" onClick={() => { setChosenKey(null); setReturned(false); }}>{t('‹ Other ways to pay')}</button>
                 )}
 
                 {returned && (
                   <div className="ret" role="status">
-                    <div><strong>Welcome back.</strong><span>Did you send {formatAmount(amount, cur)}?</span></div>
-                    <button className="primary-btn" disabled={working} onClick={() => paidNow()}>Yes, I've paid</button>
-                    <button className="linklike" onClick={() => setReturned(false)}>Not yet</button>
+                    <div><strong>{t('Welcome back.')}</strong><span>{t('Did you send {amount}?', { amount: formatAmount(amount, cur) })}</span></div>
+                    <button className="primary-btn" disabled={working} onClick={() => paidNow()}>{t("Yes, I've paid")}</button>
+                    <button className="linklike" onClick={() => setReturned(false)}>{t('Not yet')}</button>
                   </div>
                 )}
 
@@ -269,21 +271,21 @@ export function PayPanel({ token, me, bill, mine, onClose, onChanged }: {
 
                     {chosen.kind !== 'cash' && (
                       <details className="disclosure">
-                        <summary>How to pay</summary>
+                        <summary>{t('How to pay')}</summary>
                         <ol className="steps">
-                          <li>Open your banking app or wallet and send exactly the amount to {payeeName}.</li>
-                          <li>Come back here and tap "I've paid". It is only marked paid once {payeeName} confirms they received it.</li>
+                          <li>{t('Open your banking app or wallet and send exactly the amount to {name}.', { name: payeeName })}</li>
+                          <li>{t('Come back here and tap "I\'ve paid". It is only marked paid once {name} confirms they received it.', { name: payeeName })}</li>
                         </ol>
-                        <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={60} placeholder="Your bank's reference number (optional)" aria-label="Bank reference" />
+                        <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={60} placeholder={t("Your bank's reference number (optional)")} aria-label="Bank reference" />
                       </details>
                     )}
 
                     {!returned && (
                       <button className="primary" disabled={working} onClick={() => paidNow()}>
-                        {chosen.kind === 'cash' ? "I've paid in cash" : "I've paid"}
+                        {chosen.kind === 'cash' ? t("I've paid in cash") : t("I've paid")}
                       </button>
                     )}
-                    <button className="quiet" disabled={working} onClick={close}>{live ? 'Cancel payment' : 'Close'}</button>
+                    <button className="quiet" disabled={working} onClick={close}>{live ? t('Cancel payment') : t('Close')}</button>
                   </>
                 )}
               </>

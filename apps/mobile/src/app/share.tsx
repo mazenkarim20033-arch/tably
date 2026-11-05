@@ -8,6 +8,7 @@ import { Card } from '../components/Card';
 import { EmptyState } from '../components/Bits';
 import { Icon } from '../components/Icon';
 import { Screen } from '../components/Screen';
+import { QrCode } from '../components/QrCode';
 import { useTheme } from '../theme/ThemeProvider';
 import { listBills, shareUrl, type MyBill } from '../lib/myBills';
 import { success } from '../lib/haptics';
@@ -70,6 +71,10 @@ export default function ShareScreen() {
         </View>
         <Text selectable style={{ ...font.callout, color: colors.text }}>{url}</Text>
         <Text style={{ ...font.footnote, color: colors.textFaint }}>Touch and hold the link to copy it.</Text>
+      </Card>
+      <Card style={{ gap: space.sm }}>
+        <Text style={{ ...font.footnote, color: colors.textMuted, fontWeight: '600' }}>Friends next to you can scan this</Text>
+        <QrCode value={url} />
       </Card>
       <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 4 }}>
         <Icon name="lock" size={16} color={colors.textFaint} />
