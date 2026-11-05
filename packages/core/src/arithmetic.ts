@@ -35,6 +35,9 @@ export function mark(m: Marks, path: string, reason: string): void {
 
 const money = (v: Minor) => (v / 100).toFixed(2);
 
+/** Up to this much (5 piastres) between a subtotal plus charges and the total is rounding. */
+const ROUNDING = 5;
+
 export interface Settled {
   total: Minor | null;
   taxIncluded: boolean;
@@ -122,15 +125,18 @@ export function settleArithmetic(input: {
   }
 
   let taxIncluded = false;
+  let corroborated = false;
   if (total === null) {
     if (totals.subtotal !== undefined) {
       // No total line: the subtotal plus the printed charges is the amount to split. Said, flagged, editable.
       total = totals.subtotal + discounts + extras;
       notes.push(`No total line on the receipt; calculated ${(total / 100).toFixed(2)} from the subtotal and charges.`);
+      // The printed subtotal agrees with the items, so the calculated total is as good as a printed one: no warning.
+      corroborated = sumOf() + discounts === totals.subtotal;
     } else {
       notes.push('No total on the receipt to check the items against.');
     }
-    uncertain.push('total');
+    if (!corroborated) uncertain.push('total');
   } else if (totals.tax || totals.service) {
     // Prove, don't assume: if items alone already equal the printed total, tax/service are inclusive.
     const withTip = sumOf() + discounts + (totals.tip ?? 0);
@@ -165,7 +171,8 @@ function checkChain(totals: Charges, total: Minor, discounts: Minor, m: Marks): 
     .map((k) => [k, totals[k]!] as [TotalField, Minor]);
   const sumWith = (f: TotalField | null, v: Minor) =>
     fields.reduce((s, [k, x]) => s + (k === f ? v : x), 0) + discounts;
-  if (sumWith(null, 0) === total) return;
+  // Shops round each line separately, so a few piastres of difference is rounding, not a misread amount.
+  if (Math.abs(sumWith(null, 0) - total) <= ROUNDING) return;
   const fixes: Array<[TotalField, Minor]> = [];
   for (const [k, x] of fields) for (const v of digitVariants(x)) if (sumWith(k, v) === total) fixes.push([k, v]);
   for (const v of digitVariants(total)) if (sumWith(null, 0) === v) fixes.push(['total', v]);

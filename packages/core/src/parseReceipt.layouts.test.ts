@@ -56,7 +56,8 @@ describe('real receipt: TakeAway, Egypt (no total line, no store name, Qty/Descr
   it('calculates the missing total from the subtotal, says so, and reconciles', () => {
     expect(r.subtotal).toBe(21700);
     expect(r.total).toBe(21700);
-    expect(r.uncertain).toContain('total');
+    // the items add up to the printed subtotal, so the calculated total needs no warning
+    expect(r.uncertain).not.toContain('total');
     expect(r.notes.join(' ')).toMatch(/No total line/);
     expect(reconcile(r).status).toBe('ok');
   });
