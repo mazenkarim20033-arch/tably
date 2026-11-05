@@ -192,3 +192,53 @@ describe('webhooks', () => {
     expect((await hook(api, { event_id: 'e4', reference: 'TBL-NOPE00', status: 'paid', amount: 1, currency: 'EGP' })).body.result).toBe('ignored');
   });
 });
+
+describe('undoing "I\'ve paid"', () => {
+  const paid = async (api: any, t: string, h: any) => {
+    const p = (await pay(api, t, h)).body.payment;
+    await api.req('POST', `/api/s/${t}/payments/${p.id}/paid`, {}, h);
+    return p;
+  };
+
+  it('lets a friend take back "I\'ve paid" until the creator confirms, then edit and pay the new total', async () => {
+    const { api, t, alice, d } = await setup();
+    const p = await paid(api, t, alice);
+    const before = (await view(api, t)).participants.find((x: any) => x.name === 'Alice');
+    expect(before.pinned).toBe(true);
+    // locked while it stands
+    expect((await claim(api, t, alice, itemId(d, 'Mango juice'), 1)).status).toBeGreaterThanOrEqual(400);
+
+    const undo = await api.req('POST', `/api/s/${t}/payments/${p.id}/cancel`, {}, alice);
+    expect(undo.status).toBe(200);
+    expect(undo.body.payment.status).toBe('cancelled');
+    const free = (await view(api, t)).participants.find((x: any) => x.name === 'Alice');
+    expect(free.pinned).toBe(false);
+
+    // the forgotten item can now be added, and the new payment is for the new total
+    expect((await claim(api, t, alice, itemId(d, 'Mango juice'), 1)).status).toBe(200);
+    const again = await pay(api, t, alice);
+    expect(again.status).toBe(201);
+    expect(again.body.payment.amount).toBeGreaterThan(p.amount);
+  });
+
+  it('cannot take back a payment the creator has already confirmed', async () => {
+    const { api, b, t, alice } = await setup();
+    const p = await paid(api, t, alice);
+    expect((await api.req('POST', `/api/bills/${b.id}/payments/${p.id}/confirm`, {}, admin(b))).status).toBe(200);
+    expect((await api.req('POST', `/api/s/${t}/payments/${p.id}/cancel`, {}, alice)).status).toBe(409);
+  });
+
+  it('still lets the creator confirm money that arrived after the friend took it back', async () => {
+    const { api, b, t, alice } = await setup();
+    const p = await paid(api, t, alice);
+    await api.req('POST', `/api/s/${t}/payments/${p.id}/cancel`, {}, alice);
+    const r = await api.req('POST', `/api/bills/${b.id}/payments/${p.id}/confirm`, {}, admin(b));
+    expect(r.status).toBe(200);
+  });
+
+  it('nobody else can take back someone\'s payment', async () => {
+    const { api, t, alice, bob } = await setup();
+    const p = await paid(api, t, alice);
+    expect((await api.req('POST', `/api/s/${t}/payments/${p.id}/cancel`, {}, bob)).status).toBeGreaterThanOrEqual(400);
+  });
+});

@@ -211,3 +211,10 @@ input[type='text'], .joincard input, .sheet input {
 .cashcard { display: grid; gap: 4px; padding: 18px; border-radius: 18px; background: var(--success-soft); border: 1.5px solid var(--success); }
 .cashcard strong { font-size: 18px; }
 .cashcard span { color: var(--text-2); font-size: 14px; }
+
+/* Items are locked while a payment stands */
+.lockcard { display: grid; gap: 6px; margin-top: 16px; padding: 14px 16px; border-radius: 18px; background: var(--warning-soft); border: 1.5px solid var(--warning); }
+.lockcard strong { font-size: 16px; }
+.lockcard span { color: var(--text-2); font-size: 14px; }
+.lockbtn { justify-self: start; margin-top: 4px; border: 0; border-radius: 999px; padding: 10px 18px; background: var(--surface); color: var(--text); font-weight: 700; font-size: 14px; cursor: pointer; box-shadow: var(--shadow); }
+.lockbtn:active { transform: scale(.98); }

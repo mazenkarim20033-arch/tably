@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { formatAmount } from '@tably/core';
 import {
-  ApiError, cancelPayment, getPayment, markPaid, startPayment, type BillView, type ExtraMethod, type Me, type PaymentDetails,
-  type PaymentStatus, type PersonTotal,
+  ApiError, cancelPayment, markPaid, startPayment, type BillView, type ExtraMethod, type Me, type PaymentStatus, type PersonTotal,
 } from './api';
 import { Tick } from './ui';
 
@@ -76,16 +75,14 @@ function CopyRow({ label, value, onCopied }: { label: string; value: string; onC
 }
 
 /**
- * Paying a friend back. Tapping Pay shows the ways this person accepts (InstaPay, Telda, a wallet, cash...); picking one
- * shows exactly what to do for it. Opening the sheet already starts the payment, so everything is on screen at once:
- * the amount (one tap to copy), the creator's InstaPay link (one tap to open their app with the recipient filled in) or
- * their details, and a single "I've paid" button. Coming back from the banking app brings that button to the top.
- * Nothing is ever marked paid until the creator confirms.
+ * Paying a friend back. Tapping Pay lists the ways this person accepts (InstaPay, Telda, a wallet, cash...); picking one
+ * shows exactly what to do for it: the amount (one tap to copy), the creator's InstaPay link (one tap to open their
+ * app with the recipient filled in) or their details. Looking at this locks nothing: the payment, and with it the
+ * person's items, is only locked when they tap "I've paid", and they can undo that until the creator confirms.
  */
 export function PayPanel({ token, me, bill, mine, onClose, onChanged }: {
   token: string; me: Me; bill: BillView; mine: PersonTotal; onClose: () => void; onChanged: () => void;
 }) {
-  const [details, setDetails] = useState<PaymentDetails | null>(null);
   const [note, setNote] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
@@ -96,37 +93,26 @@ export function PayPanel({ token, me, bill, mine, onClose, onChanged }: {
   const chosen = options.length === 1 ? options[0]! : options.find((o) => o.key === chosenKey) ?? null;
   const attemptKey = useRef(crypto.randomUUID());
   const wentAway = useRef(false);
-  const started = useRef(false);
   const cur = bill.currency;
   const live = mine.payment && ['initiated', 'awaiting_confirmation', 'verified'].includes(mine.payment.status) ? mine.payment : null;
   const status = statusOf(mine);
-  const payeeName = bill.payee?.name ?? 'the bill creator';
+  const payee = bill.payee;
+  const payeeName = payee?.name ?? 'the bill creator';
+  const amount = live?.amount ?? mine.total;
+  const away = () => { wentAway.current = true; };
 
-  // Load the instructions for an open attempt (also after a page reload).
-  useEffect(() => {
-    if (!live) return;
-    getPayment(token, me, live.id).then(setDetails).catch(() => { /* shown via status */ });
-  }, [live?.id, live?.status, token, me]);
-
-  async function run(fn: () => Promise<PaymentDetails>) {
+  async function run(fn: () => Promise<unknown>, after?: () => void) {
     setWorking(true);
     setError(null);
     try {
-      setDetails(await fn());
+      await fn();
       onChanged();
+      after?.();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Something went wrong. Please try again.');
     }
     setWorking(false);
   }
-
-  // Start the payment as soon as the sheet opens; the key makes a repeat harmless.
-  useEffect(() => {
-    if (started.current || live || status === 'verified' || status === 'awaiting_confirmation') return;
-    started.current = true;
-    void run(() => startPayment(token, me, attemptKey.current));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   // When they come back from their banking app, put the answer front and centre.
   useEffect(() => {
@@ -140,15 +126,14 @@ export function PayPanel({ token, me, bill, mine, onClose, onChanged }: {
     return () => document.removeEventListener('visibilitychange', back);
   }, []);
 
-  const ins = details?.instructions;
-  const amount = live?.amount ?? mine.total;
-  const away = () => { wentAway.current = true; };
-  // The way they paid goes in the note, so the creator knows which app to look in.
+  // Only now does anything lock. The way they paid goes in the note, so the creator knows which app to look in.
   const paidNow = () => {
-    if (!live) return;
     const via = chosen ? `via ${chosen.name}` : '';
     const text = [via, note.trim()].filter(Boolean).join(' · ').slice(0, 80);
-    return run(() => markPaid(token, me, live.id, text));
+    return run(async () => {
+      const id = live?.id ?? (await startPayment(token, me, attemptKey.current)).payment.id;
+      await markPaid(token, me, id, text);
+    });
   };
 
   const amountRow = (
@@ -159,25 +144,23 @@ export function PayPanel({ token, me, bill, mine, onClose, onChanged }: {
   );
 
   function detailsFor(o: Option) {
-    const ref = live && <CopyRow label="Optional note, helps them match it" value={live.reference} onCopied={away} />;
     switch (o.kind) {
       case 'instapay':
         return (
           <>
             {amountRow}
-            {ins?.instapay_link ? (
-              <a className="primary-btn linkstyle" href={ins.instapay_link} target="_blank" rel="noopener noreferrer" onClick={away}>
+            {payee?.instapay_link ? (
+              <a className="primary-btn linkstyle" href={payee.instapay_link} target="_blank" rel="noopener noreferrer" onClick={away}>
                 Open InstaPay to pay {payeeName}
               </a>
             ) : null}
-            {(ins?.instapay_address || ins?.instapay_phone) && (
+            {(payee?.instapay_address || payee?.instapay_phone) && (
               <>
-                {ins?.instapay_link && <p className="or">or send to</p>}
-                {ins?.instapay_address && <CopyRow label="InstaPay address" value={ins.instapay_address} onCopied={away} />}
-                {ins?.instapay_phone && <CopyRow label="Phone number" value={ins.instapay_phone} onCopied={away} />}
+                {payee?.instapay_link && <p className="or">or send to</p>}
+                {payee?.instapay_address && <CopyRow label="InstaPay address" value={payee.instapay_address} onCopied={away} />}
+                {payee?.instapay_phone && <CopyRow label="Phone number" value={payee.instapay_phone} onCopied={away} />}
               </>
             )}
-            {ref}
           </>
         );
       case 'telda':
@@ -186,7 +169,6 @@ export function PayPanel({ token, me, bill, mine, onClose, onChanged }: {
             {amountRow}
             <CopyRow label="Telda tag or number" value={o.extra?.value ?? ''} onCopied={away} />
             <p className="hint">Open Telda, search for {payeeName}, and send exactly this amount.</p>
-            {ref}
           </>
         );
       case 'wallet':
@@ -195,7 +177,6 @@ export function PayPanel({ token, me, bill, mine, onClose, onChanged }: {
             {amountRow}
             <CopyRow label={`${o.name} number`} value={o.extra?.value ?? ''} onCopied={away} />
             <p className="hint">Open your wallet app and send exactly this amount to this number.</p>
-            {ref}
           </>
         );
       case 'cash':
@@ -210,13 +191,13 @@ export function PayPanel({ token, me, bill, mine, onClose, onChanged }: {
           <>
             {amountRow}
             <CopyRow label={o.name} value={o.extra?.value ?? ''} onCopied={away} />
-            {ref}
           </>
         );
     }
   }
 
   const needsMenu = options.length > 1 && !chosen;
+  const close = () => (live ? run(() => cancelPayment(token, me, live.id), onClose) : onClose());
 
   return (
     <div className="sheet-backdrop" onClick={onClose}>
@@ -239,6 +220,10 @@ export function PayPanel({ token, me, bill, mine, onClose, onChanged }: {
               You said you sent {formatAmount(mine.payment!.amount, cur)}. It counts as paid once {payeeName} sees it in
               their account and confirms.
             </p>
+            <p className="hint">Tapped by mistake, or forgot an item? Undo, change your items, then pay again. Only undo if you haven't sent the money.</p>
+            <button className="quiet" disabled={working} onClick={() => run(() => cancelPayment(token, me, mine.payment!.id), onClose)}>
+              Undo, I haven't paid
+            </button>
           </>
         )}
 
@@ -246,7 +231,7 @@ export function PayPanel({ token, me, bill, mine, onClose, onChanged }: {
           <>
             <h2>{needsMenu ? `Pay ${formatAmount(amount, cur)}` : `Send ${formatAmount(amount, cur)}`}</h2>
             {status === 'failed' && <p className="error">{payeeName} could not find your last payment. Send it again or ask them.</p>}
-            {status === 'expired' && <p className="error">The last attempt timed out. Here is a fresh one.</p>}
+            {status === 'expired' && <p className="error">The last attempt timed out. You can start again.</p>}
 
             {needsMenu ? (
               <>
@@ -262,7 +247,7 @@ export function PayPanel({ token, me, bill, mine, onClose, onChanged }: {
                     </li>
                   ))}
                 </ul>
-                {live && <button className="quiet" disabled={working} onClick={() => run(() => cancelPayment(token, me, live.id))}>Cancel</button>}
+                <button className="quiet" disabled={working} onClick={close}>{live ? 'Cancel payment' : 'Close'}</button>
               </>
             ) : (
               <>
@@ -270,38 +255,35 @@ export function PayPanel({ token, me, bill, mine, onClose, onChanged }: {
                   <button type="button" className="linklike backlink" onClick={() => { setChosenKey(null); setReturned(false); }}>‹ Other ways to pay</button>
                 )}
 
-                {returned && live && (
+                {returned && (
                   <div className="ret" role="status">
-                    <div><strong>Welcome back.</strong><span>Did you send {formatAmount(live.amount, cur)}?</span></div>
+                    <div><strong>Welcome back.</strong><span>Did you send {formatAmount(amount, cur)}?</span></div>
                     <button className="primary-btn" disabled={working} onClick={() => paidNow()}>Yes, I've paid</button>
                     <button className="linklike" onClick={() => setReturned(false)}>Not yet</button>
                   </div>
                 )}
 
-                {!ins || !chosen ? (
-                  <div className="skeleton sheetskel" aria-hidden><span /><span /></div>
-                ) : (
+                {chosen && (
                   <>
                     {detailsFor(chosen)}
 
                     {chosen.kind !== 'cash' && (
                       <details className="disclosure">
                         <summary>How to pay</summary>
-                        <ol className="steps">{ins.steps?.map((s) => <li key={s}>{s}</li>)}</ol>
+                        <ol className="steps">
+                          <li>Open your banking app or wallet and send exactly the amount to {payeeName}.</li>
+                          <li>Come back here and tap "I've paid". It is only marked paid once {payeeName} confirms they received it.</li>
+                        </ol>
                         <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={60} placeholder="Your bank's reference number (optional)" aria-label="Bank reference" />
                       </details>
                     )}
 
-                    {!returned && live && (
+                    {!returned && (
                       <button className="primary" disabled={working} onClick={() => paidNow()}>
                         {chosen.kind === 'cash' ? "I've paid in cash" : "I've paid"}
                       </button>
                     )}
-                    {live && (
-                      <button className="quiet" disabled={working} onClick={() => run(() => cancelPayment(token, me, live.id))}>
-                        Cancel
-                      </button>
-                    )}
+                    <button className="quiet" disabled={working} onClick={close}>{live ? 'Cancel payment' : 'Close'}</button>
                   </>
                 )}
               </>

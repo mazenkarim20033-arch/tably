@@ -20,11 +20,13 @@ const ALLOWED: Record<string, string[]> = {
   'initiated>expired': ['system', 'provider'],
   'initiated>verified': ['creator', 'provider'],
   'initiated>failed': ['creator', 'provider'],
+  'awaiting_confirmation>cancelled': ['payer'], // "I've paid" tapped by mistake: take it back until the creator confirms
   'awaiting_confirmation>verified': ['creator', 'provider'],
   'awaiting_confirmation>failed': ['creator', 'provider'],
   'awaiting_confirmation>expired': ['provider'],
   'expired>verified': ['creator', 'provider'], // money arrived after the attempt timed out
   'failed>verified': ['creator'], // creator corrects a mistaken rejection
+  'cancelled>verified': ['creator'], // the money did arrive after the payer took it back
 };
 
 const REF_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // no 0/O/1/I to avoid misreading

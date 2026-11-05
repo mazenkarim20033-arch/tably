@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { formatAmount } from '@tably/core';
 import { PayPanel, STATUS_LABEL, statusOf } from "./PayPanel";
 import { Av, Brand, niceDate } from './ui';
-import { ApiError, getBill, getVersion, join, setClaim, type BillItem, type BillView, type ClaimChange, type Me } from './api';
+import { ApiError, cancelPayment, getBill, getVersion, join, setClaim, type BillItem, type BillView, type ClaimChange, type Me } from './api';
 
 const POLL_MS = 4000;
 const POLL_SLOW_MS = 15000;
@@ -124,6 +124,20 @@ export function BillPage({ token }: { token: string }) {
     }
   }
 
+  /** Take back "I've paid" so the items can be changed again. */
+  async function undoPaid(paymentId: string) {
+    if (!me) return;
+    busy.current += 1;
+    try {
+      await cancelPayment(token, me, paymentId);
+      setBill(await getBill(token));
+    } catch (e) {
+      setToast(e instanceof ApiError ? e.message : 'Could not reach the server. Check your connection.');
+    } finally {
+      busy.current -= 1;
+    }
+  }
+
   if (fatal) {
     return (
       <main className="page center">
@@ -189,10 +203,27 @@ export function BillPage({ token }: { token: string }) {
           <p className="greet">Hi {me.name} <span aria-hidden>👋</span> Tap what you had.</p>
         )}
 
+        {mine?.pinned && mine.payment && (
+          <div className="lockcard" role="status">
+            {mine.payment.status === 'verified' ? (
+              <>
+                <strong>Paid · confirmed</strong>
+                <span>{bill.payee?.name ?? 'The bill creator'} confirmed it. Ask them if something needs to change.</span>
+              </>
+            ) : (
+              <>
+                <strong>{mine.payment.status === 'awaiting_confirmation' ? "You've said you paid" : 'Your payment has started'}</strong>
+                <span>Your items are locked while it stands. Forgot something? Undo it, change your items, then pay again.</span>
+                <button type="button" className="lockbtn" onClick={() => void undoPaid(mine.payment!.id)}>Undo and edit my items</button>
+              </>
+            )}
+          </div>
+        )}
+
         <h2 className="section">Items</h2>
         <section className={'items' + (!me ? ' locked' : '')} aria-label="Receipt items">
           {bill.items.map((i) => (
-            <ItemRow key={i.id} item={i} cur={cur} names={names} meId={me?.id} disabled={!me || bill.status !== 'open'} onChange={(c) => change(i, c)} />
+            <ItemRow key={i.id} item={i} cur={cur} names={names} meId={me?.id} disabled={!me || bill.status !== 'open' || !!mine?.pinned} onChange={(c) => change(i, c)} />
           ))}
         </section>
 

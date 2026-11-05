@@ -1,15 +1,17 @@
+import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { brand } from '@tably/core';
 import { Logo } from '../components/Logo';
 import { Button } from '../components/Button';
 import { BillCard } from '../components/BillCard';
 import { Icon, type IconName } from '../components/Icon';
-import { SectionTitle } from '../components/Card';
+import { Card, SectionTitle } from '../components/Card';
 import { useTheme } from '../theme/ThemeProvider';
 import { useBills } from '../lib/useBills';
+import { loadPayee } from '../lib/myBills';
 
 const STEPS: Array<{ icon: IconName; title: string; body: string }> = [
   { icon: 'camera', title: 'Scan the receipt', body: 'Take a photo. TABLY reads the items and checks the total.' },
@@ -21,6 +23,11 @@ export default function Home() {
   const { colors, space, font, soft, dark } = useTheme();
   const insets = useSafeAreaInsets();
   const { rows } = useBills();
+  // Whether payment details are saved on this phone: they decide what friends are offered when they pay.
+  const [paySaved, setPaySaved] = useState<boolean | null>(null);
+  useFocusEffect(useCallback(() => {
+    void loadPayee().then((p) => setPaySaved(!!p?.payee_name && !!(p.instapay_address || p.instapay_phone || p.instapay_link || (p.methods?.length ?? 0) > 0)));
+  }, []));
   const recent = (rows ?? []).slice(0, 3);
   const first = rows !== null && rows.length === 0;
 
@@ -79,6 +86,22 @@ export default function Home() {
               {recent.map((b) => <BillCard key={b.id} bill={b} />)}
             </View>
           </>
+        )}
+        {paySaved !== null && (
+          <Card tone={paySaved ? undefined : 'accent'} onPress={() => router.push('/payment')}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+              <View style={{ width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: soft.accent }}>
+                <Icon name="wallet" size={22} color={colors.accent} />
+              </View>
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text style={{ ...font.headline, color: colors.text }}>{paySaved ? 'Payment details' : 'Add your payment details'}</Text>
+                <Text style={{ ...font.footnote, color: colors.textMuted }}>
+                  {paySaved ? 'Saved. Every new bill uses them.' : 'Save your InstaPay link once, so friends can pay you in one tap.'}
+                </Text>
+              </View>
+              <Icon name="chevron-right" size={18} color={colors.textFaint} />
+            </View>
+          </Card>
         )}
       </ScrollView>
 

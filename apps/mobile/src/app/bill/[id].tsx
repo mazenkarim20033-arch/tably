@@ -9,10 +9,10 @@ import { Card, ListRow, SectionTitle } from '../../components/Card';
 import { Screen } from '../../components/Screen';
 import { useTheme } from '../../theme/ThemeProvider';
 import {
-  addPerson, closeBill, confirmPayment, getAdminBill, logReminders, rejectPayment, reopenBill, updateLink,
+  addPerson, closeBill, confirmPayment, getAdminBill, logReminders, rejectPayment, reopenBill, updateLink, updatePayee,
   type AdminBill, type AdminPayment, ApiProblem,
 } from '../../lib/billsApi';
-import { getAdminToken, shareUrl, updateShareToken } from '../../lib/myBills';
+import { getAdminToken, loadPayee, shareUrl, updateShareToken } from '../../lib/myBills';
 import { startEditDraft } from '../../lib/draftStore';
 import { agoLabel, groupReminder, owing, reminderFor } from '../../lib/reminders';
 
@@ -127,6 +127,31 @@ export default function BillScreen() {
         throw e;
       }
     });
+  }
+
+  /** Where friends pay: use the details saved on this phone, or go and edit them. */
+  function paymentMenu() {
+    Alert.alert('Payment details', 'These are what your friends see when they pay.', [
+      {
+        text: 'Use my saved details',
+        onPress: async () => {
+          const saved = await loadPayee();
+          if (!saved) return void router.push('/payment');
+          const token = await getAdminToken(id);
+          if (!token) return;
+          setBusy(true);
+          try {
+            setBill(await updatePayee(id, token, saved));
+            Alert.alert('Updated', 'Friends now see your saved payment details on this bill.');
+          } catch (e) {
+            Alert.alert('Could not update', e instanceof Error ? e.message : 'Please try again.');
+          }
+          setBusy(false);
+        },
+      },
+      { text: 'Edit my saved details', onPress: () => router.push('/payment') },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
   }
 
   function linkMenu(b: AdminBill) {
@@ -295,6 +320,7 @@ export default function BillScreen() {
             }}
           />
         )}
+        {!closed && <ListRow icon="wallet" title="Payment details" detail="Where friends are told to pay" onPress={paymentMenu} disabled={busy} />}
         <ListRow icon="share" title="Share link" onPress={() => void Share.share({ message: `Pick what you had on our bill at ${bill.store}: ${shareUrl(bill.share_token)}` })} />
         <ListRow icon="link" title="Link settings" detail={bill.share_disabled ? 'The link is off' : 'Turn off, extend or replace the link'} onPress={() => linkMenu(bill)} disabled={busy} />
         {closed

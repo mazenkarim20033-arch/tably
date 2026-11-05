@@ -12,7 +12,7 @@ TABLY never uses private or undocumented InstaPay interfaces, never automates a 
 
 `unpaid` (no row) → `initiated` → `awaiting_confirmation` → `verified`; also `failed`, `expired`, `cancelled`.
 
-- The payer can only move their own payment to `awaiting_confirmation` or `cancelled`.
+- The payer can only move their own payment to `awaiting_confirmation` or `cancelled`. They can take back "I've paid" (`awaiting_confirmation` to `cancelled`) until the creator confirms, which unlocks their items so they can add something they forgot and pay the new total. If the money did arrive after they took it back, the creator can still confirm it.
 - `verified` comes only from the creator's confirmation or an authenticated provider event.
 - An unfinished attempt expires after 24 hours; the creator can still confirm late money.
 - Every change is stored in `payment_events` (who, when, from, to).
@@ -72,3 +72,16 @@ them, and each payment is still confirmed individually on the server.
 ### Not built (and why)
 
 Automatic notification to the creator through Telegram was considered and removed: the creator checks the app instead.
+
+### Done: nothing locks until "I've paid"
+
+Opening the pay sheet only shows how to pay; it creates no payment and locks nothing. The payment (and with it the
+person's items and amount) is created when they tap "I've paid", and the bill page then says so and offers "Undo and
+edit my items". A confirmed payment stays locked: ask the creator.
+
+### Done: payment details saved once (app)
+
+A "Payment details" screen (opened from the home screen or a bill) saves the creator's InstaPay link, address, phone,
+Telda, wallet and cash on the phone. Every new bill uses them; one tap updates bills already made (refused by the
+server for a bill where someone has started paying). There are no accounts: "saved to their account" means saved on
+that person's own phone.

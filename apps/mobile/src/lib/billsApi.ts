@@ -155,3 +155,7 @@ export async function fetchSummaries(refs: { id: string; admin_token: string }[]
   if (!res.ok) throw new Error("Could not load your bills.");
   return (await res.json()).bills;
 }
+
+/** Change where friends are told to pay on a bill that already exists. Refused once someone has started paying. */
+export const updatePayee = (id: string, t: string, payee: Payee) =>
+  admin<AdminBill>(id, t, "/payee", { method: "PUT", body: JSON.stringify(payee) });
