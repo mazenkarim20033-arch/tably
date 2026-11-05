@@ -204,3 +204,18 @@ describe('three things real Apple Vision output did to receipts', () => {
     expect(r.unparsed).toEqual([]);
   });
 });
+
+describe('a total label the recognizer slipped on', () => {
+  it.each(['Totel', 'Tota1', 'Total'])('reads "%s LE 44.00" as the total, not as an item', (label) => {
+    const r = readReceipt(page([
+      [['Marlboro Gold', 0.1], ['44.00', -0.9]],
+      [[`${label} LE`, 0.1], ['44.00', -0.9]],
+      [['Cash', 0.1], ['-44.00', -0.9]],
+    ]));
+    expect(r.items.map((i) => [i.description, i.lineTotal])).toEqual([['Marlboro Gold', 4400]]);
+    expect(r.total).toBe(4400);
+  });
+  it('does not turn an ordinary word into a total label', () => {
+    expect(roleOf('Totem pole', true)).toBe('text');
+  });
+});

@@ -77,7 +77,22 @@ export function roleOf(rawText: string, hasAmount: boolean): Role {
   if (PAYMENT.test(t)) return 'payment';
   if (TOTAL.test(t)) return 'total';
   if (META.test(t) || NON_ITEM.some((re) => re.test(rawText))) return 'meta';
+  // A total label the recognizer slipped on ("Totel", "Tota1"): one letter off the real word. Only for a line with an amount.
+  if (hasAmount && words.some((w) => near(w, 'total', 1))) return 'total';
+  if (hasAmount && words.some((w) => near(w, 'subtotal', 1))) return 'subtotal';
   return 'text';
+}
+
+/** Is `word` within `max` single-letter edits (change, add, drop) of `target`? Short words only: this is for label slips. */
+function near(word: string, target: string, max: number): boolean {
+  if (word === target || Math.abs(word.length - target.length) > max || word.length < 4) return word === target;
+  let prev = Array.from({ length: target.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= word.length; i++) {
+    const row = [i];
+    for (let j = 1; j <= target.length; j++) row[j] = Math.min(prev[j]! + 1, row[j - 1]! + 1, prev[j - 1]! + (word[i - 1] === target[j - 1] ? 0 : 1));
+    prev = row;
+  }
+  return prev[target.length]! <= max;
 }
 
 const isQtyDecimal = (t: string) => /^\d{1,2}[.,]0{1,2}$/.test(normalizeDigits(t));
