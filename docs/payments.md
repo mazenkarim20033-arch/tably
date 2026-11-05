@@ -27,3 +27,31 @@ TABLY never uses private or undocumented InstaPay interfaces, never automates a 
 
 - The payment-link host allowlist defaults to `ipn.eg` and is **unverified**; set `TABLY_PAYMENT_LINK_HOSTS` once you know the real hosts.
 - A payer's "I've paid" depends on the creator checking honestly; there is no automatic proof without a provider.
+
+## Making paying faster
+
+### Done: a shorter manual flow (no accounts, no fees)
+
+Opening the pay sheet already starts the payment, so the details are on screen at once: the amount with a one-tap
+copy, an "Open InstaPay" button when the creator saved their InstaPay link (it fills in the recipient), the address
+and phone, and one "I've paid" button. The note with the `TBL-` reference is optional. Coming back from the banking
+app puts "Did you send it? Yes, I've paid" at the top. About 8 taps became about 3.
+
+InstaPay's own personal links and QR codes carry the recipient but never the amount, so the sender still types it.
+Nothing about the amount can be pre-filled without a payment company.
+
+### Possible: automatic payment with a payment company
+
+Only a company that receives the money first can prove it arrived. Findings (checked November 2026; the sources
+disagree in places, so confirm with each company before relying on a number):
+
+| Company | InstaPay | Card fee | Individuals without a commercial register | Notes |
+|---|---|---|---|---|
+| Kashier | Yes: request-to-pay and QR in the API | about 2.75% + EGP 3, no monthly fee | Not stated; business verification | Request-to-pay pushes the request into the payer's banking app with the amount filled in; the result arrives by webhook. The `KashierProvider` slot is ready. |
+| Paymob | Listed "coming soon" | 2.75% + EGP 3 | Sources conflict | Cards and wallets work; needs its own sign-up. |
+| EasyKash | Yes | 3.5% | Yes | 7-day settlement. |
+| XPay | Not published | 2.5% + EGP 2.5 | Yes | No-code payment links. |
+
+Needs from the owner before any code is written: a merchant account with real credentials (KYC, which only the
+account holder can complete), a decision on who pays the fee and how long settlement may take, and sandbox keys to
+test against.

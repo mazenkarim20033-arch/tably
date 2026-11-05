@@ -171,3 +171,23 @@ input[type='text'], .joincard input, .sheet input {
 .st { font-size: 13px; color: var(--text-3); }
 .st-verified { color: var(--success); }
 .st-failed, .st-expired { color: var(--danger); }
+
+/* Faster payment sheet */
+.amountrow { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border-radius: 18px; background: var(--accent-soft); }
+.amountrow small { display: block; font-size: 12px; font-weight: 600; letter-spacing: .4px; text-transform: uppercase; color: var(--text-2); }
+.amountrow strong { font-size: 26px; font-weight: 800; letter-spacing: -.6px; font-variant-numeric: tabular-nums; }
+.amountrow em { font-style: normal; font-size: 15px; font-weight: 600; color: var(--text-2); }
+.copybtn { border: 0; border-radius: 999px; padding: 9px 16px; background: var(--surface); color: var(--accent); font-weight: 700; font-size: 13px; cursor: pointer; white-space: nowrap; box-shadow: var(--shadow); }
+.copyrow .copybtn { background: var(--accent-soft); box-shadow: none; }
+.primary-btn.linkstyle { display: block; text-align: center; text-decoration: none; }
+.or { text-align: center; color: var(--text-3); font-size: 13px; margin: -2px 0; }
+.disclosure { border-top: 1px solid var(--border); padding-top: 10px; }
+.disclosure summary { cursor: pointer; color: var(--text-2); font-size: 14px; font-weight: 600; padding: 4px 0 10px; }
+.disclosure[open] summary { padding-bottom: 12px; }
+.disclosure input { margin-top: 12px; }
+.ret { display: grid; gap: 10px; padding: 14px 16px; border-radius: 18px; background: var(--success-soft); border: 1.5px solid var(--success); }
+.ret div { display: grid; gap: 2px; }
+.ret span { color: var(--text-2); font-size: 15px; }
+.linklike { border: 0; background: none; color: var(--text-2); font-weight: 600; font-size: 14px; padding: 4px; cursor: pointer; }
+.skeleton.sheetskel span, .skeleton.sheetskel span:first-child { height: 64px; border-radius: 18px; }
+.sheetskel { margin-top: 0; }

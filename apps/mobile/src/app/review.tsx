@@ -362,11 +362,11 @@ export default function Review() {
 
         {!draft.editBillId && (
           <Section title="Where should friends pay you?" summary={payeeSummary} open={payeeOpen} onToggle={() => setPayeeOpen((o) => !o)} tone={hasPayee ? undefined : 'warning'}>
-            <Text style={{ color: colors.textMuted, fontSize: 14 }}>Shown to people with your link. They send money from their own bank app; you confirm each payment yourself. Add at least one of address, phone or link.</Text>
+            <Text style={{ color: colors.textMuted, fontSize: 14 }}>Shown to people with your link. They send money from their own bank app; you confirm each payment yourself. Add at least one of address, phone or link. A payment link makes paying one tap for your friends: in the InstaPay app, copy your own payment link and paste it below.</Text>
             <TextField label="Your name" value={payeeName} onChange={setPayeeName} placeholder="Shown to friends" />
             <TextField label="InstaPay address" value={ipa} onChange={setIpa} placeholder="name@instapay" autoCapitalize="none" autoCorrect={false} />
             <TextField label="Phone number linked to InstaPay" value={phone} onChange={setPhone} placeholder="01012345678" keyboardType="number-pad" />
-            <TextField label="InstaPay payment link (optional)" value={link} onChange={setLink} placeholder="https://ipn.eg/..." autoCapitalize="none" autoCorrect={false} />
+            <TextField label="InstaPay payment link (recommended)" value={link} onChange={setLink} placeholder="https://ipn.eg/..." autoCapitalize="none" autoCorrect={false} />
           </Section>
         )}
 
