@@ -1,0 +1,39 @@
+name: Build Android APK (install on your phone)
+
+# Produces an installable .apk. Download the artifact, send it to the phone, open it.
+# No expiry (unlike an iPhone sideload) and no account needed.
+# The real work is in scripts/ci-android-build.sh so it can be changed without editing this file.
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('package-lock.json', 'apps/mobile/app.json') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+      - name: Build APK
+        run: bash scripts/ci-android-build.sh
+        env:
+          EXPO_PUBLIC_API_URL: ${{ vars.API_URL }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TABLY-android-apk
+          path: apps/mobile/android/TABLY.apk

@@ -1,6 +1,9 @@
 {
-  "platforms": ["ios"],
+  "platforms": ["ios", "android"],
   "apple": {
     "modules": ["TablyVisionModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.tablyvision.TablyVisionModule"]
   }
 }

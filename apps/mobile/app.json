@@ -22,14 +22,28 @@
       }
     },
     "android": {
-      "package": "app.tably.mobile"
+      "package": "app.tably.mobile",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png",
+        "backgroundColor": "#6D5BF7"
+      },
+      "softwareKeyboardLayoutMode": "resize"
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
       "expo-router",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "TABLY reads receipt photos you choose to scan.",
+          "cameraPermission": "TABLY uses the camera to scan receipts.",
+          "microphonePermission": false
+        }
+      ]
     ]
   }
 }

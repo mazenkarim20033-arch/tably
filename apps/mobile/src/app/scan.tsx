@@ -94,7 +94,7 @@ export default function Scan() {
       ) : undefined}
     >
       {!isOcrAvailable && (
-        <Callout tone="warning">Text recognition only works in the iPhone build. Here you can attach a photo and type the receipt in.</Callout>
+        <Callout tone="warning">Text recognition is not available in this build. Here you can attach a photo and type the receipt in.</Callout>
       )}
       {message && <Callout tone="danger">{message}</Callout>}
 

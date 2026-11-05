@@ -73,7 +73,7 @@ const AR: Record<string, string> = {
   'You can check everything before you share.': 'يمكنك مراجعة كل شيء قبل المشاركة.',
   'Reading your receipt…': 'جارٍ قراءة الفاتورة…',
   'This takes a few seconds.': 'يستغرق هذا بضع ثوانٍ.',
-  'Text recognition only works in the iPhone build. Here you can attach a photo and type the receipt in.': 'قراءة النص تعمل فقط على الآيفون. هنا يمكنك إرفاق صورة وكتابة الفاتورة يدوياً.',
+  'Text recognition is not available in this build. Here you can attach a photo and type the receipt in.': 'قراءة النص غير متاحة في هذا الإصدار. هنا يمكنك إرفاق صورة وكتابة الفاتورة يدوياً.',
   'Take a photo of the receipt': 'التقط صورة للفاتورة',
   'Take a photo': 'التقط صورة',
   'Fit the whole receipt in the frame. TABLY reads it on your phone.': 'ضع الفاتورة كاملة في الإطار. يقرأها TABLY على هاتفك.',
