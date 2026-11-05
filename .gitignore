@@ -14,3 +14,6 @@ __pycache__/
 
 .wrangler/
 packages/core/eval/report.json
+
+# Real receipts the owner shares for testing: names, shops and amounts stay on this machine, never in the public repo
+packages/core/eval/real/apple/
