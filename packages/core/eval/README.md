@@ -36,3 +36,10 @@ The three sets are reported separately and never averaged together.
 | errorsFlagged | share of wrong fields the review screen outlines in amber; the rest are silent errors |
 | flagPrecision | share of amber fields that were really wrong (low means false alarms) |
 | silentWrong | wrong fields with no warning: the number that matters most |
+
+## Real photos recognized elsewhere (`npm run eval:real`, `npm run eval:show`)
+`eval:real -- <dir>` runs the engine on a folder of `OcrResult` JSON files (normalized boxes, origin top-left) and reports
+how many receipts add up to their printed total; with no answer keys, the receipt's own arithmetic is the check.
+`eval:show -- <dir> <name-prefix> [--lines]` prints what the engine read from one of them.
+The Egyptian photos used so far come from the CORU/ReceiptSense dataset (MIT) and were recognized with EasyOCR
+(Arabic + English), which is much noisier than Apple Vision, so treat the numbers as a stress test, not a forecast.

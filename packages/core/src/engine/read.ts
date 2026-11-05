@@ -445,7 +445,67 @@ function interpret(input: OcrLine[], layout: Layout, opts: { attach: 'indent' | 
   });
 
   dropFreeLines(items, uncertain, notes);
-  const itemsSum = items.reduce((s, i) => s + (i.lineTotal ?? 0), 0);
+  let itemsSum = items.reduce((s, i) => s + (i.lineTotal ?? 0), 0);
+  // No total line was read (its label may be too garbled to know). The receipt's own arithmetic can still show where the
+  // items stop and which printed amount is the total, so look for that before giving up.
+  if (totalCandidates.length === 0 && totals.subtotal === undefined && items.length > 0) {
+    const pool: Minor[] = [];
+    // (1) Rows whose prices are the running sum of the rows above, then a charge, then that sum plus the charge, are the
+    // footer (subtotal, tax, total) that was mistaken for items because its labels did not read.
+    const vals = items.map((i) => i.lineTotal ?? 0);
+    let cut = -1;
+    let run = 0;
+    for (let k = 0; k < items.length - 2 && cut < 0; k++) {
+      run += vals[k]!;
+      const j = vals.findIndex((v, n) => n > k && v === run);
+      if (j < 0 || run <= 0) continue;
+      const rest = vals.slice(j + 1);
+      // some later row is the subtotal plus a non-empty subset of the rows between (the charges)
+      const between = vals.slice(j + 1, vals.length);
+      const ok = rest.some((t, n) => {
+        const mids = between.slice(0, n);
+        for (let mask = 1; mask < 1 << mids.length; mask++) if (run + mids.reduce((a, m, q) => a + (mask & (1 << q) ? m : 0), 0) === t) return true;
+        return false;
+      });
+      if (ok && vals.length - 1 - k >= 2) cut = k;
+    }
+    if (cut >= 0) {
+      const gone = items.splice(cut + 1);
+      for (const g of gone) {
+        pool.push(g.lineTotal ?? 0);
+        for (let q = uncertain.length - 1; q >= 0; q--) if (uncertain[q]!.startsWith(`items.${g.id}.`)) uncertain.splice(q, 1);
+      }
+      pool.splice(pool.indexOf(run), 1); // the subtotal row, explained
+      totals.subtotal = run;
+      notes.push('Some rows at the bottom had unreadable labels; they were treated as the subtotal and charges, not as items.');
+    }
+    itemsSum = items.reduce((a, i) => a + (i.lineTotal ?? 0), 0);
+
+    // (2) The total is an amount under the items that the items (plus one or two other amounts there) add up to.
+    const lastItem = Math.max(-1, ...info.map((l, k) => (inRecords.has(l.i) && items.length > 0 ? k : -1)));
+    const loose = info.flatMap((l, k) => (k > lastItem && !MONEY.includes(l.role) ? l.amounts : [])).map((t) => t.value).filter((v): v is Minor => v !== null && v > 0);
+    const below = [...pool, ...(cut >= 0 ? [] : loose)].filter((v) => v > 0);
+    const count = (v: Minor) => below.filter((x) => x === v).length;
+    const base = itemsSum + discounts;
+    const spare = [...new Set(below)];
+    const fits: Array<{ total: Minor; extra: Minor[] }> = [];
+    for (const t of spare) {
+      if (t === base && count(t) >= 1 && cut < 0) fits.push({ total: t, extra: [] });
+      if (t === base && cut >= 0) fits.push({ total: t, extra: [] });
+      for (const x of spare) if (x !== t && base + x === t) fits.push({ total: t, extra: [x] });
+      for (const x of spare) for (const y of spare) if (x < y && x !== t && y !== t && base + x + y === t) fits.push({ total: t, extra: [x, y] });
+    }
+    // Printed twice (total and amount paid) is strong evidence; otherwise only an unambiguous fit is believed.
+    const best = fits.sort((p, q) => count(q.total) - count(p.total) || p.extra.length - q.extra.length || q.total - p.total)[0];
+    const rivals = best ? new Set(fits.filter((f) => f.total !== best.total).map((f) => f.total)) : new Set<Minor>();
+    if (best && (count(best.total) >= 2 || rivals.size === 0)) {
+      totalCandidates.push({ value: best.total, strong: false, order: Number.MAX_SAFE_INTEGER });
+      if (best.extra.length === 1 && totals.tax === undefined && totals.service === undefined) totals.tax = best.extra[0]!;
+      mark(marks, 'total', 'No total label could be read. This amount is what the items add up to' + (best.extra.length ? ' plus the charge printed with it' : '') + '.');
+      if (best.extra.length === 1) mark(marks, 'tax', 'The label was unreadable; this is the charge that makes the items add up to the total.');
+      notes.push('The total label could not be read; the total was worked out from the other amounts.');
+    }
+  }
   const charges = (totals.tax ?? 0) + (totals.service ?? 0) + (totals.tip ?? 0) + discounts;
   // Several total lines: the one that equals the subtotal plus the charges, else a strong label, else the last one.
   const consistent = totalCandidates.filter((c) => c.value === (totals.subtotal ?? itemsSum) + charges);

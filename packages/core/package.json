@@ -9,6 +9,8 @@
     "typecheck": "tsc --noEmit",
     "eval": "vite-node eval/run.ts",
     "eval:import": "vite-node eval/import.ts",
+    "eval:real": "vite-node eval/real.ts",
+    "eval:show": "vite-node eval/show.ts",
     "eval:inspect": "vite-node eval/inspect.ts"
   },
   "devDependencies": {

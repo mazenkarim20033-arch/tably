@@ -94,7 +94,10 @@ const AMOUNT = /^[-(]?\d{1,3}([,.]?\d{3})*[.,٫]\d{2}\)?-?$/;
 const INTEGER = /^\d{1,3}$/;
 
 function classifyToken(text: string): { kind: Token['kind']; value: number | null } {
-  const t = normalizeDigits(text).replace(/^(egp|le|usd|\$|€|£)/i, '').replace(/(egp|le|ج\.?م\.?)$/i, '');
+  let t = normalizeDigits(text).replace(/^(egp|le|usd|\$|€|£)/i, '').replace(/(egp|le|ج\.?م\.?)$/i, '');
+  // A currency code the recognizer garbled and glued to the price ("E3P61.40"): letters, then an amount with decimals.
+  const glued = /^[A-Za-z؀-ۿ\d|!']{0,2}[A-Za-z؀-ۿ](\d{1,3}(?:[,.]?\d{3})*[.,٫]\d{2})$/.exec(t);
+  if (glued && !AMOUNT.test(t)) t = glued[1]!;
   if (AMOUNT.test(t)) return { kind: 'amount', value: parseAmount(t.replace(/[()]/g, '').replace(/-$/, '')) };
   if (INTEGER.test(t)) return { kind: 'integer', value: Number(t) };
   // A quantity printed with a decimal ("1.0", "2.000"): a whole number, not money.
