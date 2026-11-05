@@ -32,14 +32,14 @@ describe('parseVerifyReply', () => {
 describe('verifyTargets', () => {
   it('picks the row of a doubtful price and offers its rival values', () => {
     const t = verifyTargets(receipt(), ocr);
-    expect(t).toHaveLength(1);
+    expect(t[0]!.open).toBeUndefined(); // rivals first; open questions about the mismatch come after
     expect(t[0]!.path).toBe('items.i2.lineTotal');
     expect(t[0]!.candidates).toEqual([8500, 5500]);
     expect(t[0]!.box.y).toBeLessThan(0.2);
     expect(t[0]!.box.y + t[0]!.box.h).toBeGreaterThan(0.2);
   });
   it('has nothing to verify when nothing is in doubt', () => {
-    expect(verifyTargets({ ...receipt(), uncertain: [], items: [item('i1', 'Tea', 2000)] }, ocr)).toEqual([]);
+    expect(verifyTargets({ ...receipt(), uncertain: [], total: 2000, items: [item('i1', 'Tea', 2000)] }, ocr)).toEqual([]);
   });
   it('leaves out a doubt whose row cannot be found', () => {
     expect(verifyTargets(receipt(), [line('nothing here', 0.1)])).toEqual([]);
@@ -83,5 +83,29 @@ describe('applyAnswers', () => {
     const o = [line('Cake 85.00', 0.1, ['Cake 55.00']), line('Cake 85.00', 0.2, ['Cake 55.00'])];
     const out = applyAnswers(r, verifyTargets(r, o), { 'items.a.lineTotal': 5500, 'items.b.lineTotal': 5500 });
     expect(out.applied).toBe(false);
+  });
+});
+
+describe('open targets (the receipt does not add up and nothing says why)', () => {
+  // Cake was read as 95.00 with no rival value; the total says 75.00.
+  const r: Receipt = { ...emptyReceipt(), total: 7500, items: [item('i1', 'Tea', 2000), item('i2', 'Cake', 9500)] };
+  const o = [line('Tea 20.00', 0.1), line('Cake 95.00', 0.2), line('Total 75.00', 0.5)];
+  it('asks about the total and the priciest items', () => {
+    const t = verifyTargets(r, o);
+    expect(t.map((x) => x.path)).toEqual(['total', 'items.i2.lineTotal', 'items.i1.lineTotal']);
+    expect(t.every((x) => x.open)).toBe(true);
+  });
+  it('asks nothing when the receipt adds up', () => {
+    expect(verifyTargets({ ...r, total: 11500 }, o)).toEqual([]);
+  });
+  it('applies an answer outside the candidates when it makes the items add up', () => {
+    const out = applyAnswers(r, verifyTargets(r, o), { 'items.i2.lineTotal': 5500 });
+    expect(out.applied).toBe(true);
+    expect(out.receipt.items[1]!.lineTotal).toBe(5500);
+  });
+  it('drops an outside answer that does not make it add up', () => {
+    const out = applyAnswers(r, verifyTargets(r, o), { 'items.i2.lineTotal': 5600 });
+    expect(out.changed).toBe(false);
+    expect(out.receipt.items[1]!.lineTotal).toBe(9500);
   });
 });

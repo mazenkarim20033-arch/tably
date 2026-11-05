@@ -18,6 +18,11 @@ export interface VerifyTarget {
   candidates: Minor[];
   /** the row to crop, normalized 0..1 with the origin at the top-left */
   box: { x: number; y: number; w: number; h: number };
+  /**
+   * The scanner has no rival value for this amount; it is asked about only because the receipt does not add up. The
+   * model may then answer with any amount, which is used only if it makes the receipt add up.
+   */
+  open?: boolean;
 }
 
 export const VERIFY_SCHEMA = {
@@ -80,7 +85,7 @@ const ITEM_TOTAL = /^items\.([^.]+)\.lineTotal$/;
  * photo it was read from. A doubtful amount whose row cannot be found is left out.
  */
 export function verifyTargets(receipt: Receipt, ocr: OcrLine[], max = 6): VerifyTarget[] {
-  interface Want { path: string; current: Minor | null; candidates: Minor[]; hint: string; label?: RegExp }
+  interface Want { path: string; current: Minor | null; candidates: Minor[]; hint: string; label?: RegExp; open?: boolean }
   const wants: Want[] = [];
   for (const i of receipt.items) {
     const path = `items.${i.id}.lineTotal`;
@@ -95,6 +100,19 @@ export function verifyTargets(receipt: Receipt, ocr: OcrLine[], max = 6): Verify
     wants.push({ path: f, current: cur, candidates: [...new Set([...(cur !== null ? [cur] : []), ...rivals])], hint: '', label: LABELS[f] });
   }
   wants.sort((a, b) => b.candidates.length - a.candidates.length);
+  // The items do not add up to the total but nothing explains why: the scanner may be confidently wrong. Ask about the
+  // total, then the priciest items, and let the arithmetic decide whether any answer is believed.
+  if (reconcile(receipt).status === 'mismatch') {
+    const asked = new Set(wants.map((w) => w.path));
+    const open: Want[] = [];
+    if (receipt.total !== null && !asked.has('total')) open.push({ path: 'total', current: receipt.total, candidates: [receipt.total], hint: '', label: LABELS.total, open: true });
+    const byPrice = [...receipt.items].filter((i) => i.lineTotal !== null).sort((a, b) => b.lineTotal! - a.lineTotal!);
+    for (const i of byPrice) {
+      const path = `items.${i.id}.lineTotal`;
+      if (!asked.has(path)) open.push({ path, current: i.lineTotal, candidates: [i.lineTotal!], hint: i.description, open: true });
+    }
+    wants.push(...open);
+  }
 
   const taken = new Set<number>();
   const out: VerifyTarget[] = [];
@@ -114,7 +132,7 @@ export function verifyTargets(receipt: Receipt, ocr: OcrLine[], max = 6): Verify
     taken.add(best);
     const l = ocr[best]!;
     const y = Math.max(0, l.y - l.h * 0.4);
-    out.push({ path: w.path, candidates: w.candidates, box: { x: 0, y, w: 1, h: Math.min(1 - y, l.h * 1.8) } });
+    out.push({ path: w.path, candidates: w.candidates, box: { x: 0, y, w: 1, h: Math.min(1 - y, l.h * 1.8) }, ...(w.open ? { open: true } : {}) });
   }
   return out;
 }
@@ -140,8 +158,9 @@ function subsets<T>(xs: T[]): T[][] {
 
 /**
  * Use the model's answers (`path` to amount read, null when unreadable). Answers that are not among the candidates are
- * ignored. If the receipt does not add up now, the smallest set of answers that makes it add up is applied, provided
- * exactly one such set exists. Otherwise the answers are attached as suggestions and nothing is changed.
+ * ignored, except for open targets (see `VerifyTarget.open`), whose answers count only if they make the receipt add
+ * up. If the receipt does not add up now, the smallest set of answers that makes it add up is applied, provided
+ * exactly one such set exists. Otherwise the candidate answers are attached as suggestions and nothing is changed.
  */
 export function applyAnswers(receipt: Receipt, targets: VerifyTarget[], answers: Record<string, Minor | null>): Verified {
   const current = (path: string): Minor | null => {
@@ -150,7 +169,7 @@ export function applyAnswers(receipt: Receipt, targets: VerifyTarget[], answers:
   };
   const changes = targets.flatMap((t) => {
     const v = answers[t.path];
-    return v !== null && v !== undefined && t.candidates.includes(v) && v !== current(t.path) ? [{ path: t.path, value: v }] : [];
+    return v !== null && v !== undefined && (t.open || t.candidates.includes(v)) && v !== current(t.path) ? [{ path: t.path, value: v }] : [];
   });
   if (changes.length === 0) return { receipt, applied: false, changed: false };
 
@@ -174,7 +193,9 @@ export function applyAnswers(receipt: Receipt, targets: VerifyTarget[], answers:
   const uncertain = [...receipt.uncertain];
   const fieldChoices = { ...(receipt.fieldChoices ?? {}) };
   let items = receipt.items;
-  for (const c of changes) {
+  const rivals = changes.filter((c) => targets.find((t) => t.path === c.path)!.candidates.includes(c.value));
+  if (rivals.length === 0) return { receipt, applied: false, changed: false };
+  for (const c of rivals) {
     reasons[c.path] = `The AI read ${plain(c.value)} from the photo. Check it against the receipt.`;
     if (!uncertain.includes(c.path)) uncertain.push(c.path);
     const m = ITEM_TOTAL.exec(c.path);

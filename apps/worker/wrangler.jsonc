@@ -28,10 +28,10 @@
   "ai": { "binding": "AI" },
 
   "vars": {
-    "SCAN_ENABLED": "off",
-    "SCAN_DAILY_CAP": "200",
+    "SCAN_ENABLED": "on",
+    "SCAN_DAILY_CAP": "10",
     "SCAN_MONTHLY_CAP": "3000",
-    "SCAN_USER_MONTHLY": "5",
+    "SCAN_USER_MONTHLY": "20",
     "SHARE_LINK_DAYS": "30",
     "PAYMENT_LINK_HOSTS": "ipn.eg"
   },
