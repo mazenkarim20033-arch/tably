@@ -43,7 +43,14 @@ export const getAdminToken = (id: string) => SecureStore.getItemAsync(tokenKey(i
 export const shareUrl = (token: string) => `${webUrl()}/s/${token}`;
 
 /** The last payment details used, so the next bill is one tap faster. Not secret, but personal: stays on the phone. */
-export interface SavedPayee { payee_name: string; instapay_address?: string; instapay_phone?: string; instapay_link?: string }
+/** Another way to be paid besides InstaPay. Mirrors what the server accepts. */
+export type PayeeMethod =
+  | { kind: 'telda'; value: string }
+  | { kind: 'wallet'; value: string; label?: string }
+  | { kind: 'cash' }
+  | { kind: 'other'; label: string; value: string };
+
+export interface SavedPayee { payee_name: string; instapay_address?: string; instapay_phone?: string; instapay_link?: string; methods?: PayeeMethod[] }
 
 function payeeFile(): File {
   const dir = new Directory(Paths.document, 'bills');

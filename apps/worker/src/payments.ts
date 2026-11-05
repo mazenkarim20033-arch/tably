@@ -11,6 +11,7 @@ import { bumpIfChanged, pinnedAmounts } from './data';
 import { computeState } from './compute';
 import { HttpError, isUnique } from './http';
 import type { Bundle, Env, ParticipantRow, PaymentRow } from './types';
+import { extraMethods } from './views';
 import { PINNING } from './types';
 
 const ALLOWED: Record<string, string[]> = {
@@ -65,7 +66,7 @@ export const PROVIDERS: Record<string, Provider> = {
     label: 'InstaPay (manual)',
     automated: false,
     availability: (bill) =>
-      bill.instapay_address || bill.instapay_phone || bill.instapay_link
+      bill.instapay_address || bill.instapay_phone || bill.instapay_link || extraMethods(bill.payee_extra).length > 0
         ? { enabled: true, reason: '' }
         : { enabled: false, reason: 'The bill creator has not added payment details yet.' },
     instructions: (bill, payment) => ({
@@ -74,6 +75,7 @@ export const PROVIDERS: Record<string, Provider> = {
       instapay_address: bill.instapay_address,
       instapay_phone: bill.instapay_phone,
       instapay_link: bill.instapay_link,
+      methods: extraMethods(bill.payee_extra),
       amount: payment.amount,
       currency: payment.currency,
       reference: payment.reference,

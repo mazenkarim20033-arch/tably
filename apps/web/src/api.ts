@@ -9,7 +9,8 @@ export interface BillItem {
 }
 export type PaymentStatus = "initiated" | "awaiting_confirmation" | "verified" | "failed" | "expired" | "cancelled";
 export interface PaymentSummary { id: string; status: PaymentStatus; amount: number; reference: string; provider: string }
-export interface Payee { name: string | null; instapay_address: string | null; instapay_phone: string | null; instapay_link: string | null }
+export interface ExtraMethod { kind: 'telda' | 'wallet' | 'cash' | 'other'; label?: string | null; value?: string }
+export interface Payee { name: string | null; instapay_address: string | null; instapay_phone: string | null; instapay_link: string | null; methods?: ExtraMethod[] }
 export interface PaymentMethod { key: string; label: string; automated: boolean; enabled: boolean; reason: string }
 export interface PersonTotal {
   id: string; name: string; items_total: number; discounts: number; tax: number; service: number; tip: number;

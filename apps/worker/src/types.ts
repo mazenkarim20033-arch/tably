@@ -21,6 +21,8 @@ export interface BillRow {
   instapay_address: string | null;
   instapay_phone: string | null;
   instapay_link: string | null;
+  /** JSON list of other ways to pay, or null */
+  payee_extra: string | null;
   version: number;
   share_token: string;
   share_disabled: number;

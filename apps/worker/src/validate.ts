@@ -5,15 +5,31 @@ const money = z.number().int().min(0).max(MAX_MINOR);
 
 const trimmed = (min: number, max: number) => z.string().trim().min(min).max(max);
 
+/** Other ways to get paid besides InstaPay. Each is shown to the friend with what to send to. */
+export const ExtraMethod = z.discriminatedUnion('kind', [
+  // A Telda @tag or the phone number it is tied to.
+  z.strictObject({ kind: z.literal('telda'), value: z.string().trim().regex(/^(@?[A-Za-z0-9._]{2,30}|01[0125]\d{8})$/) }),
+  // A mobile wallet number (Vodafone Cash, Orange Cash, Etisalat Cash, ...), with an optional name for it.
+  z.strictObject({ kind: z.literal('wallet'), value: z.string().regex(/^01[0125]\d{8}$/), label: trimmed(1, 30).nullish() }),
+  // Pay in person; the creator marks it paid.
+  z.strictObject({ kind: z.literal('cash') }),
+  z.strictObject({ kind: z.literal('other'), label: trimmed(1, 30), value: trimmed(1, 80) }),
+]);
+export type ExtraMethodInput = z.infer<typeof ExtraMethod>;
+
 export const PayeeIn = z
   .strictObject({
     payee_name: trimmed(1, 60),
     instapay_address: z.string().regex(/^[A-Za-z0-9._-]{2,40}@[A-Za-z]{2,20}$/).nullish(),
     instapay_phone: z.string().regex(/^01[0125]\d{8}$/).nullish(),
     instapay_link: z.string().max(300).nullish(),
+    methods: z.array(ExtraMethod).max(6).nullish(),
   })
-  .refine((p) => p.instapay_address || p.instapay_phone || p.instapay_link, {
-    message: 'add an InstaPay address, phone number or payment link',
+  .refine((p) => p.instapay_address || p.instapay_phone || p.instapay_link || (p.methods?.length ?? 0) > 0, {
+    message: 'add at least one way to be paid',
+  })
+  .refine((p) => new Set((p.methods ?? []).filter((m) => m.kind === 'telda' || m.kind === 'cash').map((m) => m.kind)).size === (p.methods ?? []).filter((m) => m.kind === 'telda' || m.kind === 'cash').length, {
+    message: 'each of Telda and cash can be listed once',
   });
 export type PayeeInput = z.infer<typeof PayeeIn>;
 

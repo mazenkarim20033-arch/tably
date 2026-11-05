@@ -13,7 +13,7 @@ import { AmountField, TextField } from '../components/Fields';
 import { useTheme } from '../theme/ThemeProvider';
 import { getDraft, updateDraft, useDraft } from '../lib/draftStore';
 import { ApiProblem, createBill, editReceipt, MismatchError } from '../lib/billsApi';
-import { getAdminToken, loadPayee, savePayee, saveBill } from '../lib/myBills';
+import { getAdminToken, loadPayee, savePayee, saveBill, type PayeeMethod } from '../lib/myBills';
 
 const TOTAL_PATHS = ['subtotal', 'discounts', 'service', 'tax', 'tip', 'total'];
 const CHECKED_HEADER = ['date', 'currency'];
@@ -43,6 +43,11 @@ export default function Review() {
   const [ipa, setIpa] = useState('');
   const [phone, setPhone] = useState('');
   const [link, setLink] = useState('');
+  // Other ways to be paid, shown to friends next to InstaPay.
+  const [telda, setTelda] = useState('');
+  const [wallet, setWallet] = useState('');
+  const [walletName, setWalletName] = useState('');
+  const [cash, setCash] = useState(false);
   // Which cards are unfolded. Items that need a look start open and stay open while they are fixed.
   const [openItems, setOpenItems] = useState<Set<string>>(() => {
     const r0 = readDraftReceipt();
@@ -62,16 +67,29 @@ export default function Review() {
       setIpa(p.instapay_address ?? '');
       setPhone(p.instapay_phone ?? '');
       setLink(p.instapay_link ?? '');
+      for (const m of p.methods ?? []) {
+        if (m.kind === 'telda') setTelda(m.value);
+        else if (m.kind === 'wallet') { setWallet(m.value); setWalletName(m.label ?? ''); }
+        else if (m.kind === 'cash') setCash(true);
+      }
       // Saved before: fold it away, the person only needs to change it now and then.
-      if (p.payee_name && (p.instapay_address || p.instapay_phone || p.instapay_link)) setPayeeOpen(false);
+      if (p.payee_name && (p.instapay_address || p.instapay_phone || p.instapay_link || (p.methods?.length ?? 0) > 0)) setPayeeOpen(false);
     });
   }, []);
 
+  const teldaOk = telda.trim() === '' || /^(@?[A-Za-z0-9._]{2,30}|01[0125]\d{8})$/.test(telda.trim());
+  const walletOk = wallet.trim() === '' || /^01[0125]\d{8}$/.test(wallet.trim());
+  const methods: PayeeMethod[] = [
+    ...(telda.trim() && teldaOk ? [{ kind: 'telda' as const, value: telda.trim() }] : []),
+    ...(wallet.trim() && walletOk ? [{ kind: 'wallet' as const, value: wallet.trim(), ...(walletName.trim() ? { label: walletName.trim() } : {}) }] : []),
+    ...(cash ? [{ kind: 'cash' as const }] : []),
+  ];
   const payee = {
     payee_name: payeeName.trim(),
     ...(ipa.trim() ? { instapay_address: ipa.trim() } : {}),
     ...(phone.trim() ? { instapay_phone: phone.trim() } : {}),
     ...(link.trim() ? { instapay_link: link.trim() } : {}),
+    ...(methods.length > 0 ? { methods } : {}),
   };
   const hasPayee = payee.payee_name !== '' && Object.keys(payee).length > 1;
 
@@ -183,7 +201,11 @@ export default function Review() {
     r.total !== null && `Total ${money2(r.total)}`,
     r.taxIncluded && 'Tax and service included in prices',
   ].filter(Boolean).join('  ·  ') || 'Nothing printed below the items.';
-  const payeeSummary = hasPayee ? [payee.payee_name, payee.instapay_address ?? payee.instapay_phone ?? payee.instapay_link].filter(Boolean).join(' · ') : 'Add where friends should send money.';
+  const waysToPay = [
+    (ipa.trim() || phone.trim() || link.trim()) && 'InstaPay',
+    ...methods.map((m) => (m.kind === 'telda' ? 'Telda' : m.kind === 'wallet' ? m.label ?? 'Wallet' : m.kind === 'cash' ? 'Cash' : m.label)),
+  ].filter(Boolean).join(', ');
+  const payeeSummary = hasPayee ? `${payee.payee_name} · ${waysToPay}` : 'Add where friends should send money.';
   const addUnparsed = (text: string) => {
     const added = addItem(r);
     const id = added.items[added.items.length - 1]!.id;
@@ -206,7 +228,7 @@ export default function Review() {
               );
             } else void create();
           }}
-          disabled={creating || r.items.length === 0 || r.items.some((i) => i.lineTotal === null || i.description.trim() === '')} />
+          disabled={creating || !teldaOk || !walletOk || r.items.length === 0 || r.items.some((i) => i.lineTotal === null || i.description.trim() === '')} />
         <Text style={{ ...font.footnote, color: colors.textFaint, textAlign: 'center' }}>{draft.editBillId ? 'People on the link see the changes straight away.' : 'You will get a private link to share. Your edits are saved on this phone.'}</Text>
               </>
       }
@@ -362,11 +384,21 @@ export default function Review() {
 
         {!draft.editBillId && (
           <Section title="Where should friends pay you?" summary={payeeSummary} open={payeeOpen} onToggle={() => setPayeeOpen((o) => !o)} tone={hasPayee ? undefined : 'warning'}>
-            <Text style={{ color: colors.textMuted, fontSize: 14 }}>Shown to people with your link. They send money from their own bank app; you confirm each payment yourself. Add at least one of address, phone or link. A payment link makes paying one tap for your friends: in the InstaPay app, copy your own payment link and paste it below.</Text>
+            <Text style={{ color: colors.textMuted, fontSize: 14 }}>Friends see the ways you accept and pick one when they pay. They send money from their own app; you confirm each payment yourself. Add at least one.</Text>
             <TextField label="Your name" value={payeeName} onChange={setPayeeName} placeholder="Shown to friends" />
+            <Text style={{ ...font.headline, color: colors.text, marginTop: space.sm }}>InstaPay</Text>
             <TextField label="InstaPay address" value={ipa} onChange={setIpa} placeholder="name@instapay" autoCapitalize="none" autoCorrect={false} />
             <TextField label="Phone number linked to InstaPay" value={phone} onChange={setPhone} placeholder="01012345678" keyboardType="number-pad" />
             <TextField label="InstaPay payment link (recommended)" value={link} onChange={setLink} placeholder="https://ipn.eg/..." autoCapitalize="none" autoCorrect={false} />
+            <Text style={{ ...font.footnote, color: colors.textFaint }}>A payment link makes paying one tap for your friends: in the InstaPay app, copy your own payment link and paste it here.</Text>
+            <Text style={{ ...font.headline, color: colors.text, marginTop: space.sm }}>Other ways to get paid</Text>
+            <TextField label={teldaOk ? 'Telda tag or number' : 'Telda tag or number · check'} uncertain={!teldaOk} value={telda} onChange={setTelda} placeholder="@yourtag" autoCapitalize="none" autoCorrect={false} />
+            <TextField label={walletOk ? 'Mobile wallet number' : 'Mobile wallet number · check'} uncertain={!walletOk} value={wallet} onChange={setWallet} placeholder="01012345678" keyboardType="number-pad" />
+            {wallet.trim() !== '' && <TextField label="Wallet name (optional)" value={walletName} onChange={setWalletName} placeholder="Vodafone Cash" />}
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.md }}>
+              <Text style={{ color: colors.textMuted, flex: 1 }}>I also accept cash</Text>
+              <Switch value={cash} onValueChange={setCash} />
+            </View>
           </Section>
         )}
 

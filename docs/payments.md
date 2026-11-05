@@ -4,7 +4,7 @@
 |---|---|---|
 | Manual InstaPay | **Works** | Creator adds their InstaPay address / phone / link. A friend sends money from their own banking app, puts a `TBL-XXXXXX` reference in the note and taps "I've paid". The creator checks their own account and taps Confirm. |
 | Kashier (automatic InstaPay) | **Not implemented** | Needs a Kashier merchant account and credentials (business KYC). Kashier documents InstaPay QR / request-to-pay and signed webhooks (`x-kashier-signature`, HMAC-SHA256). The exact signed payload must be taken from their docs before building. Adapter slot: `KashierProvider`. |
-| Telda | **Not available** | No public merchant API was found. Stub only. |
+| Telda, mobile wallets, cash | **Works (manual)** | The creator lists their Telda tag or number, a wallet number and/or cash. The friend picks one in the pay menu, sees what to send to, and taps "I've paid"; the way they paid is added to their note (`via Telda`) so the creator knows where to look. Same confirmation rule as InstaPay. No Telda API is used: none is public. |
 
 TABLY never uses private or undocumented InstaPay interfaces, never automates a banking app, and never asks for a PIN or OTP.
 
@@ -55,3 +55,20 @@ disagree in places, so confirm with each company before relying on a number):
 Needs from the owner before any code is written: a merchant account with real credentials (KYC, which only the
 account holder can complete), a decision on who pays the fee and how long settlement may take, and sandbox keys to
 test against.
+
+### Done: ways to pay (menu)
+
+Tapping Pay lists the ways the creator accepts (InstaPay, Telda, a wallet, cash, other). With only one way, the menu is
+skipped. The list is stored as JSON in `bills.payee_extra` (migration `0002_payment_methods.sql`); it is validated by
+the API (Telda tag or phone, a wallet phone number, cash, or a labelled "other"), at most six, Telda and cash once
+each. Older bills have none and look exactly as before.
+
+### Done: check your bank once (app)
+
+The bill page lists everyone who says they paid, sorted by amount, with the note to look for and what they paid
+with. The creator ticks what they can see in their own bank and confirms them together. Nothing is ticked for
+them, and each payment is still confirmed individually on the server.
+
+### Not built (and why)
+
+Automatic notification to the creator through Telegram was considered and removed: the creator checks the app instead.

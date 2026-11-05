@@ -115,13 +115,14 @@ app.post('/api/bills', async (c) => {
     db
       .prepare(
         'INSERT INTO bills (id, store, receipt_date, currency, discounts, tax, service, tip, tax_included, printed_total, status, ' +
-          'payee_name, instapay_address, instapay_phone, instapay_link, version, share_token, share_disabled, share_expires_at, admin_token_hash, created_at) ' +
-          "VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,'open',?11,?12,?13,?14,0,?15,0,?16,?17,?18)",
+          'payee_name, instapay_address, instapay_phone, instapay_link, payee_extra, version, share_token, share_disabled, share_expires_at, admin_token_hash, created_at) ' +
+          "VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,'open',?11,?12,?13,?14,?15,0,?16,0,?17,?18,?19)",
       )
       .bind(
         id, body.store, body.receipt_date ?? null, body.currency, body.discounts, body.tax, body.service, body.tip,
         body.tax_included ? 1 : 0, body.printed_total ?? null, payee?.payee_name ?? null, payee?.instapay_address?.toLowerCase() ?? null,
-        payee?.instapay_phone ?? null, payee?.instapay_link ?? null, shareToken, expires, await sha256Hex(adminToken), now.toISOString(),
+        payee?.instapay_phone ?? null, payee?.instapay_link ?? null, payee?.methods?.length ? JSON.stringify(payee.methods) : null,
+        shareToken, expires, await sha256Hex(adminToken), now.toISOString(),
       ),
     ...body.items.map((it, n) =>
       db
@@ -167,8 +168,11 @@ app.put('/api/bills/:id/payee', async (c) => {
   const db = c.env.DB;
   await db.batch([
     db
-      .prepare('UPDATE bills SET payee_name = ?1, instapay_address = ?2, instapay_phone = ?3, instapay_link = ?4 WHERE id = ?5')
-      .bind(body.payee_name, body.instapay_address?.toLowerCase() ?? null, body.instapay_phone ?? null, body.instapay_link ?? null, b.bill.id),
+      .prepare('UPDATE bills SET payee_name = ?1, instapay_address = ?2, instapay_phone = ?3, instapay_link = ?4, payee_extra = ?5 WHERE id = ?6')
+      .bind(
+        body.payee_name, body.instapay_address?.toLowerCase() ?? null, body.instapay_phone ?? null, body.instapay_link ?? null,
+        body.methods?.length ? JSON.stringify(body.methods) : null, b.bill.id,
+      ),
     bump(db, b.bill.id),
   ]);
   return c.json(await adminResponse(c, await freshBundle(c, b.bill.id)));

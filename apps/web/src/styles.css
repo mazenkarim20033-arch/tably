@@ -191,3 +191,23 @@ input[type='text'], .joincard input, .sheet input {
 .linklike { border: 0; background: none; color: var(--text-2); font-weight: 600; font-size: 14px; padding: 4px; cursor: pointer; }
 .skeleton.sheetskel span, .skeleton.sheetskel span:first-child { height: 64px; border-radius: 18px; }
 .sheetskel { margin-top: 0; }
+
+/* Choosing how to pay */
+.methodlist { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.method { width: 100%; display: flex; align-items: center; gap: 14px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 18px; background: var(--surface); text-align: left; cursor: pointer; box-shadow: var(--shadow); transition: transform .12s, border-color .15s; }
+.method:active { transform: scale(.985); border-color: var(--accent); }
+.mico { width: 42px; height: 42px; border-radius: 13px; display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 18px; flex: none; background: var(--accent); }
+.mico-instapay { background: linear-gradient(135deg, #6D5BF7, #22C8E8); }
+.mico-telda { background: #111; }
+.mico-wallet { background: #E8588D; }
+.mico-cash { background: #3FB68B; }
+.mico-other { background: #F29B38; }
+.mtext { flex: 1; min-width: 0; display: grid; gap: 1px; }
+.mtext b { font-size: 16px; font-weight: 700; }
+.mtext small { color: var(--text-3); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mgo { color: var(--text-3); font-size: 22px; }
+.backlink { justify-self: start; padding-left: 0; color: var(--accent); }
+.hint { color: var(--text-2); font-size: 14px; }
+.cashcard { display: grid; gap: 4px; padding: 18px; border-radius: 18px; background: var(--success-soft); border: 1.5px solid var(--success); }
+.cashcard strong { font-size: 18px; }
+.cashcard span { color: var(--text-2); font-size: 14px; }

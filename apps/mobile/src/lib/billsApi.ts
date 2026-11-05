@@ -15,7 +15,7 @@ export class MismatchError extends Error {
 }
 
 /** Map the edited receipt to the API payload. Throws a readable error if something required is missing. */
-export interface Payee { payee_name: string; instapay_address?: string; instapay_phone?: string; instapay_link?: string }
+export interface Payee { payee_name: string; instapay_address?: string; instapay_phone?: string; instapay_link?: string; methods?: import('./myBills').PayeeMethod[] }
 
 export function toPayload(r: Receipt, acceptMismatch: boolean, payee?: Payee) {
   const items = r.items.map((i) => {

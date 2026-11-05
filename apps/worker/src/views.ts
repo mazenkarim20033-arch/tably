@@ -16,6 +16,17 @@ function relevantPayments(payments: PaymentRow[]): Map<string, PaymentRow> {
   return best;
 }
 
+/** The stored list of other ways to pay; anything unreadable counts as none. */
+export function extraMethods(json: string | null): Array<{ kind: string; label?: string | null; value?: string }> {
+  if (!json) return [];
+  try {
+    const v = JSON.parse(json);
+    return Array.isArray(v) ? v : [];
+  } catch {
+    return [];
+  }
+}
+
 export function paymentMethods(hasPayee: boolean) {
   return [
     {
@@ -36,7 +47,8 @@ export function publicView(b: Bundle) {
   const participants = state.participants.map((row) => ({ ...row, payment: summary(best.get(row.id)) }));
   const collected = b.payments.filter((p) => p.status === 'verified').reduce((s, p) => s + p.amount, 0);
   const awaiting = b.payments.filter((p) => p.status === 'awaiting_confirmation').reduce((s, p) => s + p.amount, 0);
-  const hasPayee = !!(b.bill.instapay_address || b.bill.instapay_phone || b.bill.instapay_link);
+  const methods = extraMethods(b.bill.payee_extra);
+  const hasPayee = !!(b.bill.instapay_address || b.bill.instapay_phone || b.bill.instapay_link || methods.length > 0);
   return {
     store: b.bill.store,
     date: b.bill.receipt_date,
@@ -51,6 +63,7 @@ export function publicView(b: Bundle) {
           instapay_address: b.bill.instapay_address,
           instapay_phone: b.bill.instapay_phone,
           instapay_link: b.bill.instapay_link,
+          methods,
         }
       : null,
     payment_methods: paymentMethods(hasPayee),
