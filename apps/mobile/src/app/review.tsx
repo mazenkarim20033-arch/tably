@@ -19,7 +19,6 @@ import { PayeeFields } from '../components/PayeeFields';
 import { readWithAi, useAiAvailable } from '../lib/aiRead';
 
 const TOTAL_PATHS = ['subtotal', 'discounts', 'service', 'tax', 'tip', 'total'];
-const CHECKED_HEADER = ['date', 'currency'];
 
 /** The receipt being edited, read once when the screen opens (for initial open/closed state). */
 function readDraftReceipt(): Receipt | null {
@@ -189,8 +188,7 @@ export default function Review() {
   };
   const lookCount =
     r.items.filter((i) => needsLook(r, i)).length +
-    TOTAL_PATHS.filter((k) => r.uncertain.includes(k)).length +
-    CHECKED_HEADER.filter((k) => r.uncertain.includes(k)).length;
+    TOTAL_PATHS.filter((k) => r.uncertain.includes(k)).length;
   const status =
     rec.status === 'ok' ? { c: colors.success, t: 'Matches the receipt total' }
     : rec.status === 'mismatch' ? { c: colors.danger, t: `The receipt says ${money2(rec.printedTotal)}, which is ${money2(Math.abs(rec.difference ?? 0))} ${(rec.difference ?? 0) > 0 ? 'more' : 'less'}. Check the amounts below.` }
@@ -249,15 +247,15 @@ export default function Review() {
         <Card tone={rec.status === 'mismatch' ? 'danger' : lookCount > 0 ? 'warning' : undefined} style={{ gap: space.md }}>
           <TextField value={r.merchant ?? ''} onChange={(v) => edit(setField(r, 'merchant', v))} placeholder="Restaurant name" />
           <Pressable onPress={() => setDetailsOpen((o) => !o)} accessibilityRole="button" style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Text style={{ color: CHECKED_HEADER.some((k) => flagged(k)) ? colors.warning : colors.textMuted, fontSize: 14 }}>
-              {dateText} · {r.currency}{CHECKED_HEADER.some((k) => flagged(k)) ? ' · check' : ''}
+            <Text style={{ color: colors.textMuted, fontSize: 14 }}>
+              {dateText} · {r.currency}
             </Text>
             <Text style={{ color: colors.accent, fontWeight: '600' }}>{detailsOpen ? 'Done' : 'Edit'}</Text>
           </Pressable>
           {detailsOpen && (
             <View style={{ flexDirection: 'row', gap: space.sm }}>
-              <TextField label="Date (YYYY-MM-DD)" width="62%" value={r.date ?? ''} uncertain={flagged('date')} onChange={(v) => edit(setField(r, 'date', v === '' ? null : v))} placeholder="2026-11-03" autoCapitalize="none" />
-              <TextField label="Currency" width="34%" value={r.currency} uncertain={flagged('currency')} onChange={(v) => edit(setField(r, 'currency', v.toUpperCase().slice(0, 3)))} autoCapitalize="characters" />
+              <TextField label="Date (YYYY-MM-DD)" width="62%" value={r.date ?? ''} onChange={(v) => edit(setField(r, 'date', v === '' ? null : v))} placeholder="2026-11-03" autoCapitalize="none" />
+              <TextField label="Currency" width="34%" value={r.currency} onChange={(v) => edit(setField(r, 'currency', v.toUpperCase().slice(0, 3)))} autoCapitalize="characters" />
             </View>
           )}
           <View style={{ gap: 2 }}>
