@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import * as ImageManipulator from 'expo-image-manipulator';
-import { chooseReading, parseVisionReply, receiptFromVision, type OcrLine, type Receipt } from '@tably/core';
+import { applyAnswers, verifyTargets, type OcrLine, type Receipt, type VerifyTarget } from '@tably/core';
 import { apiUrl, requireServer } from './config';
 
 /** A random id this install made for itself, so the server can count its monthly AI reads. It is not a login. */
@@ -37,34 +37,46 @@ export function useAiAvailable(refresh?: unknown): { on: boolean; left: number |
   return state;
 }
 
-/** Shrink the photo so it uploads quickly: receipts stay legible at about 1280 px on the long side. */
-async function smallJpeg(uri: string): Promise<string> {
+/** One row of the photo, cut out and shrunk so it uploads in a moment. */
+async function cropRow(uri: string, photo: { width: number; height: number }, box: VerifyTarget['box']): Promise<string> {
+  const originX = Math.round(box.x * photo.width);
+  const originY = Math.round(box.y * photo.height);
+  const width = Math.max(1, Math.min(photo.width - originX, Math.round(box.w * photo.width)));
+  const height = Math.max(1, Math.min(photo.height - originY, Math.round(box.h * photo.height)));
   const context = ImageManipulator.ImageManipulator.manipulate(uri);
-  context.resize({ height: 1600 });
+  context.crop({ originX, originY, width, height });
+  if (width > 900) context.resize({ width: 900 });
   const rendered = await context.renderAsync();
-  const out = await rendered.saveAsync({ format: ImageManipulator.SaveFormat.JPEG, compress: 0.7, base64: true });
+  const out = await rendered.saveAsync({ format: ImageManipulator.SaveFormat.JPEG, compress: 0.8, base64: true });
   if (!out.base64) throw new Error('Could not prepare the photo.');
   return out.base64;
 }
 
 export interface AiResult {
-  /** the reading to show: the AI's if it holds together clearly better, otherwise the scanner's */
   receipt: Receipt;
-  usedAi: boolean;
+  /** the AI's answers were used because they make the items add up */
+  applied: boolean;
+  /** the receipt differs from the one sent (corrections applied, or the AI's readings offered as choices) */
+  changed: boolean;
 }
 
-/** Send the photo to be read, then keep whichever reading adds up better. Throws a readable message on failure. */
+/**
+ * Ask the AI about only the amounts the scan is unsure of: a small picture of each row, plus the values it could be.
+ * Throws a readable message on failure. Nothing is sent when there is nothing in doubt.
+ */
 export async function readWithAi(imageUri: string, ocr: OcrLine[], current: Receipt): Promise<AiResult> {
-  const image = await smallJpeg(imageUri);
+  const targets = verifyTargets(current, ocr);
+  if (targets.length === 0) return { receipt: current, applied: false, changed: false };
+  const photo = await ImageManipulator.ImageManipulator.manipulate(imageUri).renderAsync();
+  const crops = [];
+  for (const t of targets) crops.push({ path: t.path, candidates: t.candidates, image: await cropRow(imageUri, photo, t.box) });
   const res = await fetch(`${requireServer()}/api/scan`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-install-id': await getInstallId() },
-    body: JSON.stringify({ image }),
+    body: JSON.stringify({ crops }),
   });
-  const body = (await res.json().catch(() => ({}))) as { reading?: unknown; detail?: unknown };
+  const body = (await res.json().catch(() => ({}))) as { answers?: Record<string, number | null>; detail?: unknown };
   if (!res.ok) throw new Error(typeof body.detail === 'string' ? body.detail : 'The AI reading did not work. Your normal scan is still here.');
-  const reading = parseVisionReply(body.reading);
-  if (!reading) throw new Error('The AI could not make sense of this photo.');
-  const chosen = chooseReading(current, receiptFromVision(reading, ocr));
-  return { receipt: chosen.receipt, usedAi: chosen.source === 'ai' };
+  if (!body.answers || typeof body.answers !== 'object') throw new Error('The AI could not make sense of this photo.');
+  return applyAnswers(current, targets, body.answers);
 }

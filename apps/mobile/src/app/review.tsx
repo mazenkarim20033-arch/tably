@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Alert, Image, Pressable, Share, Switch, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import {
-  addItem, encodeOcrDump, formatAmount, reconcile, removeItem, setField, setItemDescription, setItemLineTotal,
+  addItem, encodeOcrDump, verifyTargets, formatAmount, reconcile, removeItem, setField, setItemDescription, setItemLineTotal,
   setItemQuantity, setTaxIncluded, type HeaderField, type Receipt,
 } from '@tably/core';
 import { Button } from '../components/Button';
@@ -109,8 +109,8 @@ export default function Review() {
 
   // Optional second opinion from an AI model: only after the person agrees to send this one photo, and never silently.
   const askAi = () => Alert.alert(
-    'Send this photo to an AI service?',
-    'The photo is sent once to be read, and not kept. Without it, TABLY reads everything on your phone. The AI can misread numbers too, so TABLY only uses its answer when it adds up better than the normal scan, and you can undo it.',
+    'Send parts of this photo to an AI service?',
+    'Only the few lines TABLY is unsure about are cut out and sent, once, and not kept. Everything else is read on your phone. The AI can misread too, so TABLY only uses an answer when it makes the items add up; otherwise it just offers it as a choice. You can undo it.',
     [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -120,8 +120,9 @@ export default function Review() {
           setAiBusy(true);
           try {
             const out = await readWithAi(draft.imageUri, draft.ocr, draft.receipt);
-            if (out.usedAi) updateDraft({ receipt: out.receipt, beforeAi: draft.receipt });
-            else Alert.alert('Kept your scan', 'The AI reading did not add up any better than the normal scan, so nothing was changed.');
+            if (out.applied) updateDraft({ receipt: out.receipt, beforeAi: draft.receipt });
+            else if (out.changed) updateDraft({ receipt: out.receipt });
+            else Alert.alert('Nothing to change', 'The AI agreed with the scan, or could not tell, so nothing was changed.');
           } catch (e) {
             Alert.alert('AI reading did not work', e instanceof Error ? e.message : 'Try again later. Your normal scan is still here.');
           }
@@ -133,15 +134,15 @@ export default function Review() {
   );
   const aiOffer = draft.beforeAi ? (
     <Card tone="accent" style={{ gap: space.sm }}>
-      <Text style={{ ...font.headline, color: colors.text }}>Read with AI</Text>
-      <Text style={{ ...font.footnote, color: colors.textMuted }}>This reading came from the AI because it adds up better. Check the amounts against the receipt.</Text>
+      <Text style={{ ...font.headline, color: colors.text }}>Corrected with AI</Text>
+      <Text style={{ ...font.footnote, color: colors.textMuted }}>The AI corrected something because it makes the items add up. Check the amounts against the receipt.</Text>
       <Button label="Undo, use my normal scan" variant="secondary" onPress={() => updateDraft({ receipt: draft.beforeAi!, beforeAi: undefined })} />
     </Card>
-  ) : aiOn && draft.imageUri && !draft.editBillId && (rec.status !== 'ok' || r.uncertain.length > 0) ? (
+  ) : aiOn && draft.imageUri && !draft.editBillId && verifyTargets(r, draft.ocr).length > 0 ? (
     aiLeft === 0 ? null : <Card style={{ gap: space.sm }}>
-      <Text style={{ ...font.headline, color: colors.text }}>Not sure about this scan?</Text>
-      <Text style={{ ...font.footnote, color: colors.textMuted }}>Ask an AI to read the photo too. You choose each time.{aiLeft === null ? "" : ` ${aiLeft} left this month.`}</Text>
-      <Button label={aiBusy ? 'Reading…' : 'Read with AI'} variant="secondary" loading={aiBusy} onPress={askAi} />
+      <Text style={{ ...font.headline, color: colors.text }}>A few amounts look doubtful</Text>
+      <Text style={{ ...font.footnote, color: colors.textMuted }}>Ask an AI to look at just the lines it is unsure about. You choose each time.{aiLeft === null ? "" : ` ${aiLeft} left this month.`}</Text>
+      <Button label={aiBusy ? 'Reading…' : 'Check with AI'} variant="secondary" loading={aiBusy} onPress={askAi} />
     </Card>
   ) : null;
   const flagged = (path: string) => r.uncertain.includes(path);

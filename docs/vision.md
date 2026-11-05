@@ -4,14 +4,22 @@ The normal scan (Apple Vision OCR, then the layout and arithmetic engine) runs o
 reading. A vision model is an optional second opinion for messy receipts and bad photos.
 
 ## How it works
-- The review screen shows **Read with AI** when the scan does not add up or has fields to check, and only if the
-  server reports `vision: true` (`GET /api/features`).
-- The person confirms each time. The photo is resized (about 1600 px, JPEG) and sent to `POST /api/scan`; it is not stored.
-- The Worker asks a Workers AI vision model (`SCAN_MODEL`, default `@cf/meta/llama-3.2-11b-vision-instruct`) for JSON
-  with amounts as printed text. It returns that reading only.
-- On the phone, `receiptFromVision` builds a receipt. Every amount the scanner never saw (counting its runner-up
-  readings) is flagged, and the receipt's arithmetic is checked. `chooseReading` keeps the scanner's reading unless the
-  AI's is clearly better. The previous reading is kept so **Undo** restores it. Nothing is applied without showing.
+The scanner stays the primary reader. The AI is a verifier for the few amounts the scanner is unsure about.
+
+1. The engine marks doubtful amounts and knows the values they could be (runner-up readings, one-digit fixes).
+2. `verifyTargets` finds the photo row each doubtful amount came from. Nothing is sent if nothing is in doubt.
+3. The review screen shows **Check with AI** only then, and only if the server reports `vision: true`
+   (`GET /api/features`). The person confirms each time.
+4. The phone cuts out just those rows (a thin strip each, at most 6, about 900 px wide) and sends them with the
+   candidate values to `POST /api/scan`. The full photo never leaves the phone; nothing is stored.
+5. The Worker asks a Workers AI vision model (`SCAN_MODEL`, default `@cf/meta/llama-3.2-11b-vision-instruct`) which
+   amount each row shows, as JSON.
+6. `applyAnswers` ignores any answer that is not one of the candidates. If the items do not add up now, it applies the
+   smallest set of answers that makes them add up, but only when exactly one such set exists; the previous reading is kept
+   so **Undo** restores it. Otherwise the answers are only offered as one-tap choices. The model never overrules
+   arithmetic, and nothing is applied without being shown.
+
+The backend is replaceable: an on-device model only has to answer "which of these amounts does this row show".
 
 ## Cost and limits
 Off by default: `SCAN_ENABLED` is `"off"` in `apps/worker/wrangler.jsonc`. Set it to `"on"` and deploy to switch it on;
@@ -35,10 +43,12 @@ one limit among several, not the only protection.
 Meta's vision model asks for a one-time licence acceptance per Cloudflare account (see the model's page in the
 Cloudflare dashboard). The model call has not been run against the live service yet; check the first real scan.
 
-## Later: on the phone
-The same `VisionReading` format can be produced by an on-device model, which would need no server and no upload.
-Only the call that produces the reading would change.
+## On the phone instead
+Researched, not built: SmolVLM (256M/500M) and Qwen2-VL 2B through MLX Swift are the candidates. No iPhone 15 speed
+or receipt-accuracy numbers were found, and the memory limit for a free-Apple-ID install is unconfirmed, so a
+time-boxed spike is needed: it fits in memory, answers a row in under about 10 s, and beats the scanner alone on
+real receipts with known answers.
 
 ## Not yet measured
-Small models misread digits more than the large hosted ones. Whether this beats the normal scan on real photos has
-to be measured on receipts with known answers before relying on it.
+Small models misread digits more than large ones. Whether the verifier helps on real photos has to be measured on
+receipts with known answers before relying on it.
