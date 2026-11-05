@@ -12,6 +12,7 @@
     "eval:real": "vite-node eval/real.ts",
     "eval:show": "vite-node eval/show.ts",
     "eval:fx": "vite-node eval/fx.ts",
+    "eval:pick": "vite-node eval/advanced/score_pick.ts",
     "eval:inspect": "vite-node eval/inspect.ts"
   },
   "devDependencies": {
