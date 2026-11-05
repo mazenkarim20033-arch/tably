@@ -24,7 +24,12 @@
     }
   ],
 
+  // Workers AI reads receipt photos when SCAN_ENABLED is "on" (docs/vision.md). Free daily allowance; off by default.
+  "ai": { "binding": "AI" },
+
   "vars": {
+    "SCAN_ENABLED": "off",
+    "SCAN_DAILY_CAP": "200",
     "SHARE_LINK_DAYS": "30",
     "PAYMENT_LINK_HOSTS": "ipn.eg"
   },

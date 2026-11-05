@@ -6,3 +6,4 @@ export * from './parseReceipt';
 export * from './receiptEdit';
 export * from './ocrDump';
 export * from './engine';
+export * from './vision';

@@ -114,7 +114,7 @@ export default function Scan() {
       <Card style={{ gap: 6 }}>
         <Text style={{ ...font.headline, color: colors.text }}>For the best read</Text>
         <Text style={{ ...font.callout, color: colors.textMuted }}>
-          Lay the receipt flat in good light and include the total at the bottom. Folds and glare make digits harder to read. Your photo stays on this phone.
+          Lay the receipt flat in good light and include the total at the bottom. Folds and glare make digits harder to read. Your photo stays on this phone unless you choose to ask an AI for a second opinion.
         </Text>
       </Card>
 

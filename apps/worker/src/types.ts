@@ -3,6 +3,11 @@ export interface Env {
   ASSETS: Fetcher;
   SHARE_LINK_DAYS?: string;
   PAYMENT_LINK_HOSTS?: string;
+  /** Workers AI, for reading receipts with a vision model. Optional: the app works without it. */
+  AI?: Ai;
+  SCAN_ENABLED?: string;
+  SCAN_MODEL?: string;
+  SCAN_DAILY_CAP?: string;
 }
 
 export interface BillRow {

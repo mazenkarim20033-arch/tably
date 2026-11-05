@@ -16,6 +16,7 @@ import { ApiProblem, createBill, editReceipt, MismatchError } from '../lib/bills
 import { getAdminToken, savePayee, saveBill } from '../lib/myBills';
 import { usePayeeForm } from '../lib/usePayeeForm';
 import { PayeeFields } from '../components/PayeeFields';
+import { readWithAi, useAiAvailable } from '../lib/aiRead';
 
 const TOTAL_PATHS = ['subtotal', 'discounts', 'service', 'tax', 'tip', 'total'];
 const CHECKED_HEADER = ['date', 'currency'];
@@ -42,6 +43,8 @@ export default function Review() {
   const [showImage, setShowImage] = useState(false);
   const [creating, setCreating] = useState(false);
   const form = usePayeeForm();
+  const aiOn = useAiAvailable();
+  const [aiBusy, setAiBusy] = useState(false);
   // Which cards are unfolded. Items that need a look start open and stay open while they are fixed.
   const [openItems, setOpenItems] = useState<Set<string>>(() => {
     const r0 = readDraftReceipt();
@@ -102,6 +105,43 @@ export default function Review() {
   const r = draft.receipt;
   const rec = reconcile(r);
   const edit = (next: Receipt) => updateDraft({ receipt: next });
+
+  // Optional second opinion from an AI model: only after the person agrees to send this one photo, and never silently.
+  const askAi = () => Alert.alert(
+    'Send this photo to an AI service?',
+    'The photo is sent once to be read, and not kept. Without it, TABLY reads everything on your phone. The AI can misread numbers too, so TABLY only uses its answer when it adds up better than the normal scan, and you can undo it.',
+    [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Send and read',
+        onPress: async () => {
+          if (!draft.imageUri) return;
+          setAiBusy(true);
+          try {
+            const out = await readWithAi(draft.imageUri, draft.ocr, draft.receipt);
+            if (out.usedAi) updateDraft({ receipt: out.receipt, beforeAi: draft.receipt });
+            else Alert.alert('Kept your scan', 'The AI reading did not add up any better than the normal scan, so nothing was changed.');
+          } catch (e) {
+            Alert.alert('AI reading did not work', e instanceof Error ? e.message : 'Try again later. Your normal scan is still here.');
+          }
+          setAiBusy(false);
+        },
+      },
+    ],
+  );
+  const aiOffer = draft.beforeAi ? (
+    <Card tone="accent" style={{ gap: space.sm }}>
+      <Text style={{ ...font.headline, color: colors.text }}>Read with AI</Text>
+      <Text style={{ ...font.footnote, color: colors.textMuted }}>This reading came from the AI because it adds up better. Check the amounts against the receipt.</Text>
+      <Button label="Undo, use my normal scan" variant="secondary" onPress={() => updateDraft({ receipt: draft.beforeAi!, beforeAi: undefined })} />
+    </Card>
+  ) : aiOn && draft.imageUri && !draft.editBillId && (rec.status !== 'ok' || r.uncertain.length > 0) ? (
+    <Card style={{ gap: space.sm }}>
+      <Text style={{ ...font.headline, color: colors.text }}>Not sure about this scan?</Text>
+      <Text style={{ ...font.footnote, color: colors.textMuted }}>Ask an AI to read the photo too. You choose each time.</Text>
+      <Button label={aiBusy ? 'Reading…' : 'Read with AI'} variant="secondary" loading={aiBusy} onPress={askAi} />
+    </Card>
+  ) : null;
   const flagged = (path: string) => r.uncertain.includes(path);
   // A disputed field: why, in a few words, and the values the evidence supports as one-tap choices.
   const dispute = (path: string, current: number | null, choices: number[] | undefined, use: (v: number) => void) => {
@@ -199,6 +239,8 @@ export default function Review() {
         {draft.ocrError && (
           <Callout tone="warning">Text recognition did not run ({draft.ocrError}) Enter the receipt below.</Callout>
         )}
+
+        {aiOffer}
 
         {/* Summary: what this receipt is, what it adds up to, and how much needs a look. */}
         <Card tone={rec.status === 'mismatch' ? 'danger' : lookCount > 0 ? 'warning' : undefined} style={{ gap: space.md }}>

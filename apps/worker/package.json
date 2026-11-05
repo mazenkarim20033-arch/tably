@@ -12,6 +12,7 @@
     "db:migrate:remote": "wrangler d1 migrations apply tably --remote"
   },
   "dependencies": {
+    "@tably/core": "*",
     "hono": "^4.13.16",
     "zod": "^4.6.7"
   },

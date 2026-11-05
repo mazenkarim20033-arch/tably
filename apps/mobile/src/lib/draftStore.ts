@@ -14,6 +14,8 @@ export interface Draft {
   /** Pixel size of the recognized image, so the dump can be read at the right aspect ratio. */
   ocrSize?: { width: number; height: number };
   ocrError: string | null;
+  /** The scanner's reading from before an AI reading replaced it, so the person can go back. */
+  beforeAi?: Receipt;
   /** set when editing an existing bill instead of creating a new one */
   editBillId?: string;
 }

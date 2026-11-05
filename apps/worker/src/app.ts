@@ -14,6 +14,7 @@ import {
   BillCreate, BillEdit, ClaimSet, CloseBody, LinkUpdate, PaidBody, ParticipantCreate, PayeeIn, PaymentCreate, ReminderLog,
   ReviewBody, SummaryRequest, TransferCreate,
 } from './validate';
+import { MAX_SCAN_BYTES, scanRoutes } from './scan';
 import { adminView, publicView, type EventRow } from './views';
 
 export { HttpError } from './http';
@@ -31,7 +32,7 @@ export const app = new Hono<{ Bindings: Env }>();
 
 app.use('*', async (c, next) => {
   const declared = Number(c.req.header('content-length') ?? 0);
-  if (declared > MAX_JSON_BYTES) throw new HttpError(413, 'Request body too large.');
+  if (declared > (c.req.path === '/api/scan' ? MAX_SCAN_BYTES : MAX_JSON_BYTES)) throw new HttpError(413, 'Request body too large.');
   await next();
   const h = c.res.headers;
   // Share tokens live in URLs, so never leak them through Referer; never cache bill data.
@@ -88,6 +89,8 @@ function paymentOf(b: Bundle, personId: string, paymentId: string): PaymentRow {
 // ---------- routes: health ----------
 
 app.get('/api/health', (c) => c.json({ ok: true }));
+
+scanRoutes(app);
 
 // ---------- routes: creator ----------
 
