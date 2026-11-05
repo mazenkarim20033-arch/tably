@@ -8,6 +8,8 @@ export interface Env {
   SCAN_ENABLED?: string;
   SCAN_MODEL?: string;
   SCAN_DAILY_CAP?: string;
+  SCAN_MONTHLY_CAP?: string;
+  SCAN_USER_MONTHLY?: string;
 }
 
 export interface BillRow {

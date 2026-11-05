@@ -1,25 +1,40 @@
 import { useEffect, useState } from 'react';
+import * as SecureStore from 'expo-secure-store';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { chooseReading, parseVisionReply, receiptFromVision, type OcrLine, type Receipt } from '@tably/core';
 import { apiUrl, requireServer } from './config';
 
-/** Whether the server can read photos with an AI model. Asked once; false when unreachable or switched off. */
-let known: boolean | null = null;
-export function useAiAvailable(): boolean {
-  const [on, setOn] = useState(known ?? false);
+/** A random id this install made for itself, so the server can count its monthly AI reads. It is not a login. */
+let installId: string | null = null;
+async function getInstallId(): Promise<string> {
+  if (installId) return installId;
+  try {
+    installId = await SecureStore.getItemAsync('tably.install');
+    if (!installId) {
+      installId = `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`.padEnd(24, '0');
+      await SecureStore.setItemAsync('tably.install', installId);
+    }
+  } catch {
+    installId = installId ?? `tmp${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`.padEnd(24, '0');
+  }
+  return installId;
+}
+
+/** Whether the server can read photos with an AI model, and how many reads this install has left this month. */
+export function useAiAvailable(refresh?: unknown): { on: boolean; left: number | null } {
+  const [state, setState] = useState<{ on: boolean; left: number | null }>({ on: false, left: null });
   useEffect(() => {
-    if (known !== null || !apiUrl()) return;
+    if (!apiUrl()) return;
     let live = true;
-    fetch(`${apiUrl()}/api/features`)
-      .then((r) => (r.ok ? r.json() : { vision: false }))
-      .then((f: { vision?: boolean }) => {
-        known = !!f.vision;
-        if (live) setOn(known);
-      })
-      .catch(() => undefined);
+    void getInstallId().then((id) =>
+      fetch(`${apiUrl()}/api/features`, { headers: { 'x-install-id': id } })
+        .then((r) => (r.ok ? r.json() : { vision: false }))
+        .then((f: { vision?: boolean; left?: number }) => { if (live) setState({ on: !!f.vision, left: typeof f.left === 'number' ? f.left : null }); })
+        .catch(() => undefined),
+    );
     return () => { live = false; };
-  }, []);
-  return on;
+  }, [refresh]);
+  return state;
 }
 
 /** Shrink the photo so it uploads quickly: receipts stay legible at about 1280 px on the long side. */
@@ -43,7 +58,7 @@ export async function readWithAi(imageUri: string, ocr: OcrLine[], current: Rece
   const image = await smallJpeg(imageUri);
   const res = await fetch(`${requireServer()}/api/scan`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', 'x-install-id': await getInstallId() },
     body: JSON.stringify({ image }),
   });
   const body = (await res.json().catch(() => ({}))) as { reading?: unknown; detail?: unknown };

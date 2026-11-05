@@ -30,6 +30,8 @@
   "vars": {
     "SCAN_ENABLED": "off",
     "SCAN_DAILY_CAP": "200",
+    "SCAN_MONTHLY_CAP": "3000",
+    "SCAN_USER_MONTHLY": "5",
     "SHARE_LINK_DAYS": "30",
     "PAYMENT_LINK_HOSTS": "ipn.eg"
   },

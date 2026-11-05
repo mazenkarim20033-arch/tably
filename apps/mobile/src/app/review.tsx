@@ -43,8 +43,9 @@ export default function Review() {
   const [showImage, setShowImage] = useState(false);
   const [creating, setCreating] = useState(false);
   const form = usePayeeForm();
-  const aiOn = useAiAvailable();
   const [aiBusy, setAiBusy] = useState(false);
+  const [aiUsed, setAiUsed] = useState(0);
+  const { on: aiOn, left: aiLeft } = useAiAvailable(aiUsed);
   // Which cards are unfolded. Items that need a look start open and stay open while they are fixed.
   const [openItems, setOpenItems] = useState<Set<string>>(() => {
     const r0 = readDraftReceipt();
@@ -125,6 +126,7 @@ export default function Review() {
             Alert.alert('AI reading did not work', e instanceof Error ? e.message : 'Try again later. Your normal scan is still here.');
           }
           setAiBusy(false);
+          setAiUsed((n) => n + 1);
         },
       },
     ],
@@ -136,9 +138,9 @@ export default function Review() {
       <Button label="Undo, use my normal scan" variant="secondary" onPress={() => updateDraft({ receipt: draft.beforeAi!, beforeAi: undefined })} />
     </Card>
   ) : aiOn && draft.imageUri && !draft.editBillId && (rec.status !== 'ok' || r.uncertain.length > 0) ? (
-    <Card style={{ gap: space.sm }}>
+    aiLeft === 0 ? null : <Card style={{ gap: space.sm }}>
       <Text style={{ ...font.headline, color: colors.text }}>Not sure about this scan?</Text>
-      <Text style={{ ...font.footnote, color: colors.textMuted }}>Ask an AI to read the photo too. You choose each time.</Text>
+      <Text style={{ ...font.footnote, color: colors.textMuted }}>Ask an AI to read the photo too. You choose each time.{aiLeft === null ? "" : ` ${aiLeft} left this month.`}</Text>
       <Button label={aiBusy ? 'Reading…' : 'Read with AI'} variant="secondary" loading={aiBusy} onPress={askAi} />
     </Card>
   ) : null;
