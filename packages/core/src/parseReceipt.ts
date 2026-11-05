@@ -860,7 +860,7 @@ export function parseWithSlope(clean: OcrLine[], slope: number): { receipt: Rece
   const reasons: Record<string, string> = {};
   const fieldChoices: NonNullable<Receipt['fieldChoices']> = {};
   const { total, taxIncluded, arith } = settleArithmetic({
-    items, totals, total: chosen ? chosen.value : null, discounts, notes, uncertain, loosePrices, reasons, fieldChoices,
+    items, totals, total: chosen ? chosen.value : null, discounts, notes, unparsed, uncertain, loosePrices, reasons, fieldChoices,
   });
 
   const receipt: Receipt = {

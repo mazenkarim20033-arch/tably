@@ -694,7 +694,7 @@ function interpret(input: OcrLine[], layout: Layout, opts: { attach: 'indent' | 
   }
   const loosePrices = region.flatMap((l) => l.amounts).filter((t) => !records.some((r) => r.consumed.has(t))).map((t) => t.value).filter((v): v is number => v !== null);
   const settled = settleArithmetic({
-    items, totals, total: chosen ? chosen.value : null, discounts, notes, uncertain, loosePrices,
+    items, totals, total: chosen ? chosen.value : null, discounts, notes, unparsed, uncertain, loosePrices,
     reasons: marks.reasons, fieldChoices: marks.fieldChoices, rates,
   });
 

@@ -56,6 +56,8 @@ export function settleArithmetic(input: {
   total: Minor | null;
   discounts: Minor;
   notes: string[];
+  /** rows left out of the items (see the stray-row rule) are added here so they stay visible */
+  unparsed?: string[];
   uncertain: string[];
   /** amounts the reader saw in the item area but could not tie to a name */
   loosePrices?: Minor[];
@@ -103,10 +105,23 @@ export function settleArithmetic(input: {
         uncertain.push(`items.${item.id}.lineTotal`);
         arith = 'repaired';
       } else if (suspects.length === 1 && misreads.length === 0) {
-        arith = 'repaired';
-        for (const item of suspects[0]!) {
-          item.flags.push('does-not-add-up');
-          uncertain.push(`items.${item.id}.lineTotal`);
+        const gone = suspects[0]!;
+        const echo = gone.length === 1 && gone[0]!.lineTotal !== null && gone[0]!.lineTotal === sumOf() - gone[0]!.lineTotal;
+        if (echo) {
+          // The row is worth exactly what all the other rows add up to: it is the subtotal line itself (its label too
+          // garbled to read), not an item. Left out, and kept in the list of unused rows so it can be added back.
+          const item = gone[0]!;
+          items.splice(items.indexOf(item), 1);
+          input.unparsed?.push(`${item.description} ${money(item.lineTotal ?? 0)}`.trim());
+          notes.push(`Left out "${item.description.trim() || 'a row'}" (${money(item.lineTotal ?? 0)}): it is the same amount as all the other items together, so it is the subtotal, not an item.`);
+          arith = 'exact';
+        } else {
+          // Another amount that would make the items add up if it were not there: flagged, never removed on a guess.
+          arith = 'repaired';
+          for (const item of gone) {
+            item.flags.push('does-not-add-up');
+            uncertain.push(`items.${item.id}.lineTotal`);
+          }
         }
       } else if (misreads.length + suspects.length > 0) {
         notes.push('The items do not add up to the subtotal and more than one price could be the cause. Check them against the receipt.');

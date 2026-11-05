@@ -152,10 +152,17 @@ describe('stray rows', () => {
   it('flags a lone row whose removal makes the items match the subtotal, but keeps it', () => {
     const r = parseReceipt(ocr(['CAFE X', 'Latte|60.00', 'Cake|40.00', 'Mystery thing|25.00', 'Subtotal|100.00', 'Total|100.00']));
     const mystery = r.items.find((i) => i.description === 'Mystery thing')!;
-    expect(r.items).toHaveLength(3); // never removed automatically
+    expect(r.items).toHaveLength(3); // an unrelated amount is never removed on a guess
     expect(mystery.flags).toContain('does-not-add-up');
     expect(r.uncertain).toContain(`items.${mystery.id}.lineTotal`);
     expect(r.items.filter((i) => i.flags.includes('does-not-add-up'))).toHaveLength(1);
+  });
+  it('leaves out a row that is the same amount as all the other items together: it is the subtotal itself', () => {
+    const r = parseReceipt(ocr(['CAFE X', 'Latte|60.00', 'Cake|40.00', 'Subtota|100.00', 'Subtotal|100.00', 'Total|100.00']));
+    expect(r.items.map((i) => i.description)).toEqual(['Latte', 'Cake']);
+    expect(r.notes.join(' ')).toMatch(/Left out "Subtota" \(100\.00\)/);
+    expect(r.unparsed.join(' ')).toMatch(/Subtota 100\.00/); // still listed, so it can be added back
+    expect(reconcile(r).status).toBe('ok');
   });
   it('does not guess when more than one explanation fits', () => {
     // Removing A and B fits, but so does reading C as 30.00: two explanations, so neither is offered.
