@@ -17,6 +17,7 @@ import { getAdminToken, savePayee, saveBill } from '../lib/myBills';
 import { usePayeeForm } from '../lib/usePayeeForm';
 import { PayeeFields } from '../components/PayeeFields';
 import { readWithAi, useAiAvailable } from '../lib/aiRead';
+import { dateLocale, t, useLang } from '../lib/i18n';
 
 const TOTAL_PATHS = ['subtotal', 'discounts', 'service', 'tax', 'tip', 'total'];
 
@@ -37,6 +38,7 @@ function needsLook(r: Receipt, i: Receipt['items'][number]): boolean {
 const money2 = (m: number | null) => (m === null ? '—' : (m / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 
 export default function Review() {
+  useLang();
   const { colors, space, radius, font, soft } = useTheme();
   const draft = useDraft();
   const [showImage, setShowImage] = useState(false);
@@ -69,7 +71,7 @@ export default function Review() {
     try {
       if (draft.editBillId) {
         const token = await getAdminToken(draft.editBillId);
-        if (!token) throw new Error('This phone does not hold the admin key for this bill.');
+        if (!token) throw new Error(t('This phone does not hold the admin key for this bill.'));
         await editReceipt(draft.editBillId, token, draft.receipt, acceptMismatch);
         router.back();
         return;
@@ -86,15 +88,15 @@ export default function Review() {
     } catch (e) {
       setCreating(false);
       if (e instanceof ApiProblem && e.code === 'mismatch') {
-        Alert.alert('Totals do not match', 'Your items do not add up to the receipt total. Save anyway using the item total?', [{ text: 'Go back and fix', style: 'cancel' }, { text: 'Use item total', onPress: () => void create(true) }]);
+        Alert.alert(t('Totals do not match'), t('Your items do not add up to the receipt total. Save anyway using the item total?'), [{ text: t('Go back and fix'), style: 'cancel' }, { text: t('Use item total'), onPress: () => void create(true) }]);
       } else if (e instanceof MismatchError) {
         Alert.alert(
-          'Totals do not match',
+          t('Totals do not match'),
           `Your items add up to ${formatAmount(e.computed, draft.receipt.currency)} but the receipt total is ${formatAmount(e.printed, draft.receipt.currency)}. Friends will be asked to split ${formatAmount(e.computed, draft.receipt.currency)}.`,
-          [{ text: 'Go back and fix', style: 'cancel' }, { text: 'Use item total', onPress: () => void create(true) }],
+          [{ text: t('Go back and fix'), style: 'cancel' }, { text: t('Use item total'), onPress: () => void create(true) }],
         );
       } else {
-        Alert.alert('Could not create the bill', e instanceof Error ? e.message : 'Please try again.');
+        Alert.alert(t('Could not create the bill'), e instanceof Error ? e.message : t('Please try again.'));
       }
     }
   }
@@ -108,12 +110,12 @@ export default function Review() {
 
   // Optional second opinion from an AI model: only after the person agrees to send this one photo, and never silently.
   const askAi = () => Alert.alert(
-    'Send parts of this photo to an AI service?',
-    'Only the few lines TABLY is unsure about are cut out and sent, once, and not kept. Everything else is read on your phone. The AI can misread too, so TABLY only uses an answer when it makes the items add up; otherwise it just offers it as a choice. You can undo it.',
+    t('Send parts of this photo to an AI service?'),
+    t('Only the few lines TABLY is unsure about are cut out and sent, once, and not kept. Everything else is read on your phone. The AI can misread too, so TABLY only uses an answer when it makes the items add up; otherwise it just offers it as a choice. You can undo it.'),
     [
-      { text: 'Cancel', style: 'cancel' },
+      { text: t('Cancel'), style: 'cancel' },
       {
-        text: 'Send and read',
+        text: t('Send and read'),
         onPress: async () => {
           if (!draft.imageUri) return;
           setAiBusy(true);
@@ -121,9 +123,9 @@ export default function Review() {
             const out = await readWithAi(draft.imageUri, draft.ocr, draft.receipt);
             if (out.applied) updateDraft({ receipt: out.receipt, beforeAi: draft.receipt });
             else if (out.changed) updateDraft({ receipt: out.receipt });
-            else Alert.alert('Nothing to change', 'The AI agreed with the scan, or could not tell, so nothing was changed.');
+            else Alert.alert(t('Nothing to change'), t('The AI agreed with the scan, or could not tell, so nothing was changed.'));
           } catch (e) {
-            Alert.alert('AI reading did not work', e instanceof Error ? e.message : 'Try again later. Your normal scan is still here.');
+            Alert.alert(t('AI reading did not work'), e instanceof Error ? e.message : t('Try again later. Your normal scan is still here.'));
           }
           setAiBusy(false);
           setAiUsed((n) => n + 1);
@@ -133,14 +135,14 @@ export default function Review() {
   );
   const aiOffer = draft.beforeAi ? (
     <Card tone="accent" style={{ gap: space.sm }}>
-      <Text style={{ ...font.headline, color: colors.text }}>Corrected with AI</Text>
-      <Text style={{ ...font.footnote, color: colors.textMuted }}>The AI corrected something because it makes the items add up. Check the amounts against the receipt.</Text>
+      <Text style={{ ...font.headline, color: colors.text }}>{t('Corrected with AI')}</Text>
+      <Text style={{ ...font.footnote, color: colors.textMuted }}>{t('The AI corrected something because it makes the items add up. Check the amounts against the receipt.')}</Text>
       <Button label="Undo, use my normal scan" variant="secondary" onPress={() => updateDraft({ receipt: draft.beforeAi!, beforeAi: undefined })} />
     </Card>
   ) : aiOn && draft.imageUri && !draft.editBillId && verifyTargets(r, draft.ocr).length > 0 ? (
     aiLeft === 0 ? null : <Card style={{ gap: space.sm }}>
-      <Text style={{ ...font.headline, color: colors.text }}>A few amounts look doubtful</Text>
-      <Text style={{ ...font.footnote, color: colors.textMuted }}>Ask an AI to look at just the lines it is unsure about. You choose each time.{aiLeft === null ? "" : ` ${aiLeft} left this month.`}</Text>
+      <Text style={{ ...font.headline, color: colors.text }}>{t('A few amounts look doubtful')}</Text>
+      <Text style={{ ...font.footnote, color: colors.textMuted }}>{t('Ask an AI to look at just the lines it is unsure about. You choose each time.')}{aiLeft === null ? '' : t(' {n} left this month.', { n: aiLeft })}</Text>
       <Button label={aiBusy ? 'Reading…' : 'Check with AI'} variant="secondary" loading={aiBusy} onPress={askAi} />
     </Card>
   ) : null;
@@ -154,7 +156,7 @@ export default function Review() {
       <View style={{ gap: 6 }}>
         {reason && (
           <View style={{ padding: 10, borderRadius: 12, backgroundColor: soft.warning }}>
-            <Text style={{ ...font.footnote, color: colors.text }}>{reason}</Text>
+            <Text style={{ ...font.footnote, color: colors.text }}>{t(reason)}</Text>
           </View>
         )}
         {options.length > 0 && (
@@ -166,7 +168,7 @@ export default function Review() {
                 onPress={() => use(v)}
                 style={{ paddingVertical: 8, paddingHorizontal: 16, borderRadius: radius.pill, backgroundColor: colors.accent }}
               >
-                <Text style={{ color: colors.accentText, fontWeight: '600' }}>Use {formatAmount(v, r.currency)}</Text>
+                <Text style={{ color: colors.accentText, fontWeight: '600' }}>{t('Use {amount}', { amount: formatAmount(v, r.currency) })}</Text>
               </Pressable>
             ))}
           </View>
@@ -201,17 +203,17 @@ export default function Review() {
     </View>
   );
   const retake = () => {
-    Alert.alert('Retake the photo?', 'Your changes to this receipt will be lost.', [
-      { text: 'Keep editing', style: 'cancel' },
-      { text: 'Retake', style: 'destructive', onPress: () => router.replace('/scan') },
+    Alert.alert(t('Retake the photo?'), t('Your changes to this receipt will be lost.'), [
+      { text: t('Keep editing'), style: 'cancel' },
+      { text: t('Retake'), style: 'destructive', onPress: () => router.replace('/scan') },
     ]);
   };
   const lookCount =
     r.items.filter((i) => needsLook(r, i)).length +
     TOTAL_PATHS.filter((k) => r.uncertain.includes(k)).length;
   const status =
-    rec.status === 'ok' ? { c: colors.success, t: 'Matches the receipt total' }
-    : rec.status === 'mismatch' ? { c: colors.danger, t: `The receipt says ${money2(rec.printedTotal)}, which is ${money2(Math.abs(rec.difference ?? 0))} ${(rec.difference ?? 0) > 0 ? 'more' : 'less'}. Check the amounts below.` }
+    rec.status === 'ok' ? { c: colors.success, t: t('Matches the receipt total') }
+    : rec.status === 'mismatch' ? { c: colors.danger, t: t('The receipt says {printed}, which is {diff} {dir}. Check the amounts below.', { printed: money2(rec.printedTotal), diff: money2(Math.abs(rec.difference ?? 0)), dir: (rec.difference ?? 0) > 0 ? t('more') : t('less') }) }
     : { c: colors.warning, t: rec.message };
   const toggle = <T,>(set: Set<T>, v: T) => {
     const next = new Set(set);
@@ -219,16 +221,16 @@ export default function Review() {
     else next.add(v);
     return next;
   };
-  const dateText = r.date ? new Date(`${r.date}T12:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : 'No date';
+  const dateText = r.date ? new Date(`${r.date}T12:00:00`).toLocaleDateString(dateLocale(), { day: 'numeric', month: 'short', year: 'numeric' }) : t('No date');
   const totalsSummary = [
-    r.subtotal !== null && `Subtotal ${money2(r.subtotal)}`,
-    r.discounts !== 0 && `Discount ${money2(r.discounts)}`,
-    r.service !== null && `Service ${money2(r.service)}`,
-    r.tax !== null && `Tax ${money2(r.tax)}`,
-    r.tip !== null && `Tip ${money2(r.tip)}`,
-    r.total !== null && `Total ${money2(r.total)}`,
-    r.taxIncluded && 'Tax and service included in prices',
-  ].filter(Boolean).join('  ·  ') || 'Nothing printed below the items.';
+    r.subtotal !== null && t('Subtotal {v}', { v: money2(r.subtotal) }),
+    r.discounts !== 0 && t('Discount {v}', { v: money2(r.discounts) }),
+    r.service !== null && t('Service {v}', { v: money2(r.service) }),
+    r.tax !== null && t('Tax {v}', { v: money2(r.tax) }),
+    r.tip !== null && t('Tip {v}', { v: money2(r.tip) }),
+    r.total !== null && t('Total {v}', { v: money2(r.total) }),
+    r.taxIncluded && t('Tax and service included in prices'),
+  ].filter(Boolean).join('  ·  ') || t('Nothing printed below the items.');
   const payeeSummary = form.summary;
   const addUnparsed = (text: string) => {
     const added = addItem(r);
@@ -246,31 +248,31 @@ export default function Review() {
             if (r.total === null) {
               // Nothing printed to check against: say what friends will split and let the person decide.
               Alert.alert(
-                'No receipt total to check',
-                `There is no total on this receipt, so TABLY cannot double-check the items. Friends will split ${formatAmount(rec.computedTotal, r.currency)} (the items plus any charges). Continue?`,
-                [{ text: 'Go back', style: 'cancel' }, { text: 'Continue', onPress: () => void create() }],
+                t('No receipt total to check'),
+                t('There is no total on this receipt, so TABLY cannot double-check the items. Friends will split {amount} (the items plus any charges). Continue?', { amount: formatAmount(rec.computedTotal, r.currency) }),
+                [{ text: t('Go back'), style: 'cancel' }, { text: t('Continue'), onPress: () => void create() }],
               );
             } else void create();
           }}
           disabled={creating || !form.valid || r.items.length === 0 || r.items.some((i) => i.lineTotal === null)} />
-        <Text style={{ ...font.footnote, color: colors.textFaint, textAlign: 'center' }}>{draft.editBillId ? 'People on the link see the changes straight away.' : 'You will get a private link to share. Your edits are saved on this phone.'}</Text>
+        <Text style={{ ...font.footnote, color: colors.textFaint, textAlign: 'center' }}>{draft.editBillId ? t('People on the link see the changes straight away.') : t('You will get a private link to share. Your edits are saved on this phone.')}</Text>
               </>
       }
     >
         {draft.ocrError && (
-          <Callout tone="warning">Text recognition did not run ({draft.ocrError}) Enter the receipt below.</Callout>
+          <Callout tone="warning">{t('Text recognition did not run ({error}) Enter the receipt below.', { error: draft.ocrError })}</Callout>
         )}
 
         {aiOffer}
 
         {/* Summary: what this receipt is, what it adds up to, and how much needs a look. */}
         <Card tone={rec.status === 'mismatch' ? 'danger' : lookCount > 0 ? 'warning' : undefined} style={{ gap: space.md }}>
-          <TextField value={r.merchant ?? ''} onChange={(v) => edit(setField(r, 'merchant', v))} placeholder="Restaurant name" />
+          <TextField value={r.merchant ?? ''} onChange={(v) => edit(setField(r, 'merchant', v))} placeholder={t('Restaurant name')} />
           <Pressable onPress={() => setDetailsOpen((o) => !o)} accessibilityRole="button" style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
             <Text style={{ color: colors.textMuted, fontSize: 14 }}>
               {dateText} · {r.currency}
             </Text>
-            <Text style={{ color: colors.accent, fontWeight: '600' }}>{detailsOpen ? 'Done' : 'Edit'}</Text>
+            <Text style={{ color: colors.accent, fontWeight: '600' }}>{detailsOpen ? t('Done') : t('Edit')}</Text>
           </Pressable>
           {detailsOpen && (
             <View style={{ flexDirection: 'row', gap: space.sm }}>
@@ -279,27 +281,27 @@ export default function Review() {
             </View>
           )}
           <View style={{ gap: 2 }}>
-            <Text style={{ color: colors.textFaint, fontSize: 13 }}>Items and charges add up to</Text>
+            <Text style={{ color: colors.textFaint, fontSize: 13 }}>{t('Items and charges add up to')}</Text>
             <Text style={{ color: colors.text, fontSize: 32, fontWeight: '700', letterSpacing: -0.8 }}>{money2(rec.computedTotal)} <Text style={{ fontSize: 16, fontWeight: '500', color: colors.textMuted }}>{r.currency}</Text></Text>
           </View>
           <Text style={{ color: status.c, fontWeight: '600' }}>{status.t}</Text>
           {lookCount > 0 && (
             <Text style={{ color: colors.warning, fontSize: 14 }}>
-              {lookCount === 1 ? '1 thing' : `${lookCount} things`} to check, outlined in amber below.
+              {lookCount === 1 ? t('1 thing to check, outlined in amber below.') : t('{n} things to check, outlined in amber below.', { n: lookCount })}
             </Text>
           )}
           {(r.notes ?? []).map((n) => (
-            <Text key={n} style={{ color: colors.textMuted, fontSize: 13 }}>• {n}</Text>
+            <Text key={n} style={{ color: colors.textMuted, fontSize: 13 }}>• {t(n)}</Text>
           ))}
           <View style={{ flexDirection: 'row', gap: space.lg, alignItems: 'center', flexWrap: 'wrap' }}>
             {draft.imageUri && (
               <Pressable onPress={() => setShowImage((v) => !v)} accessibilityRole="button">
-                <Text style={{ color: colors.accent, fontWeight: '600' }}>{showImage ? 'Hide original' : 'Show original'}</Text>
+                <Text style={{ color: colors.accent, fontWeight: '600' }}>{showImage ? t('Hide original') : t('Show original')}</Text>
               </Pressable>
             )}
             {!draft.editBillId && (
               <Pressable onPress={retake} accessibilityRole="button">
-                <Text style={{ color: colors.accent, fontWeight: '600' }}>{draft.imageUri ? 'Retake photo' : 'Scan a receipt instead'}</Text>
+                <Text style={{ color: colors.accent, fontWeight: '600' }}>{draft.imageUri ? t('Retake photo') : t('Scan a receipt instead')}</Text>
               </Pressable>
             )}
           </View>
@@ -307,7 +309,7 @@ export default function Review() {
         </Card>
 
         {/* Items: one line each; tap to edit. Items that need a look start open. */}
-        <Text style={{ color: colors.text, fontSize: 18, fontWeight: '600', marginTop: space.sm }}>Items</Text>
+        <Text style={{ color: colors.text, fontSize: 18, fontWeight: '600', marginTop: space.sm }}>{t('Items')}</Text>
         {r.items.map((i) => {
           const open = openItems.has(i.id);
           const look = needsLook(r, i);
@@ -319,9 +321,9 @@ export default function Review() {
                   <Text style={{ ...font.caption, color: colors.textMuted, fontWeight: '700' }}>{i.quantity}×</Text>
                 </View>
                 <View style={{ flex: 1, gap: 2 }}>
-                  <Text numberOfLines={open ? undefined : 2} style={{ color: i.description.trim() ? colors.text : colors.textFaint, fontSize: 16 }}>{i.description.trim() || 'Item (no name read)'}</Text>
-                  {!open && look && reason ? <Text numberOfLines={2} style={{ color: colors.warning, fontSize: 13 }}>{reason}</Text> : null}
-                  {i.quantity > 1 && i.unitPrice !== null && !open ? <Text style={{ color: colors.textFaint, fontSize: 13 }}>{money2(i.unitPrice)} each</Text> : null}
+                  <Text numberOfLines={open ? undefined : 2} style={{ color: i.description.trim() ? colors.text : colors.textFaint, fontSize: 16 }}>{i.description.trim() || t('Item (no name read)')}</Text>
+                  {!open && look && reason ? <Text numberOfLines={2} style={{ color: colors.warning, fontSize: 13 }}>{t(reason)}</Text> : null}
+                  {i.quantity > 1 && i.unitPrice !== null && !open ? <Text style={{ color: colors.textFaint, fontSize: 13 }}>{t('{amount} each', { amount: money2(i.unitPrice) })}</Text> : null}
                 </View>
                 <Text style={{ color: look ? colors.warning : colors.text, fontSize: 16, fontWeight: '600' }}>{money2(i.lineTotal)}</Text>
               </Pressable>
@@ -330,7 +332,7 @@ export default function Review() {
                   <TextField label="Name" value={i.description} onChange={(v) => edit(setItemDescription(r, i.id, v))} placeholder="Item" />
                   {i.suggestedLineTotal !== undefined && i.suggestedLineTotal !== i.lineTotal && !r.reasons?.[`items.${i.id}.lineTotal`] && (
                     <Text style={{ color: colors.warning, fontSize: 13 }}>
-                      The items only add up to the receipt if this price is {formatAmount(i.suggestedLineTotal, r.currency)}. The scanner may have misread a digit. Check the photo.
+                      {t('The items only add up to the receipt if this price is {amount}. The scanner may have misread a digit. Check the photo.', { amount: formatAmount(i.suggestedLineTotal, r.currency) })}
                     </Text>
                   )}
                   {dispute(
@@ -340,11 +342,11 @@ export default function Review() {
                     (v) => edit(setItemLineTotal(r, i.id, v)),
                   )}
                   {flagged(`items.${i.id}.quantity`) && r.reasons?.[`items.${i.id}.quantity`] && r.reasons[`items.${i.id}.quantity`] !== r.reasons[`items.${i.id}.lineTotal`] && (
-                    <Text style={{ color: colors.warning, fontSize: 13 }}>{r.reasons[`items.${i.id}.quantity`]}</Text>
+                    <Text style={{ color: colors.warning, fontSize: 13 }}>{t(r.reasons[`items.${i.id}.quantity`]!)}</Text>
                   )}
                   {i.flags.includes('does-not-add-up') && (
                     <Text style={{ color: colors.warning, fontSize: 13 }}>
-                      This may not be an item: without it, the items match the receipt subtotal. Remove it if it is something else (an address, a code).
+                      {t('This may not be an item: without it, the items match the receipt subtotal. Remove it if it is something else (an address, a code).')}
                     </Text>
                   )}
                   <View style={{ flexDirection: 'row', gap: space.sm, alignItems: 'flex-end' }}>
@@ -355,11 +357,11 @@ export default function Review() {
                   </View>
                   {i.quantity > 1 && (
                     <Text style={{ color: colors.textFaint, fontSize: 13 }}>
-                      {i.unitPrice === null ? 'Per-unit price not exact; kept as a line total.' : `${formatAmount(i.unitPrice, r.currency)} each`}
+                      {i.unitPrice === null ? t('Per-unit price not exact; kept as a line total.') : t('{amount} each', { amount: formatAmount(i.unitPrice, r.currency) })}
                     </Text>
                   )}
-                  <Pressable onPress={() => edit(removeItem(r, i.id))} accessibilityRole="button" accessibilityLabel={`Remove ${i.description || 'item'}`} hitSlop={8} style={{ alignSelf: 'flex-start' }}>
-                    <Text style={{ color: colors.danger, fontWeight: '600' }}>Remove item</Text>
+                  <Pressable onPress={() => edit(removeItem(r, i.id))} accessibilityRole="button" accessibilityLabel={t('Remove {name}', { name: i.description || t('Item') })} hitSlop={8} style={{ alignSelf: 'flex-start' }}>
+                    <Text style={{ color: colors.danger, fontWeight: '600' }}>{t('Remove item')}</Text>
                   </Pressable>
                 </View>
               )}
@@ -379,7 +381,7 @@ export default function Review() {
 
         {r.unparsed.length > 0 && (
           <Card>
-            <Text style={{ color: colors.textMuted, fontSize: 14 }}>Rows we could not read. Tap one to add it as an item:</Text>
+            <Text style={{ color: colors.textMuted, fontSize: 14 }}>{t('Rows we could not read. Tap one to add it as an item:')}</Text>
             {r.unparsed.map((u, n) => (
               <Pressable key={n} onPress={() => addUnparsed(u)} accessibilityRole="button" style={{ paddingVertical: 4 }}>
                 <Text style={{ color: colors.accent, fontSize: 15 }}>+ {u.replace(/\s{2,}/g, ' ')}</Text>
@@ -402,10 +404,10 @@ export default function Review() {
           {money('tip', 'Tip')}
           {money('total', 'Total (as printed)')}
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.md }}>
-            <Text style={{ color: colors.textMuted, flex: 1 }}>Tax and service are already included in the item prices</Text>
+            <Text style={{ color: colors.textMuted, flex: 1 }}>{t('Tax and service are already included in the item prices')}</Text>
             <Switch value={r.taxIncluded} onValueChange={(v) => edit(setTaxIncluded(r, v))} />
           </View>
-          <Text style={{ color: colors.textFaint, fontSize: 13 }}>Items add up to {formatAmount(rec.itemsSum, r.currency)}.</Text>
+          <Text style={{ color: colors.textFaint, fontSize: 13 }}>{t('Items add up to {amount}.', { amount: formatAmount(rec.itemsSum, r.currency) })}</Text>
         </Section>
 
         {!draft.editBillId && (
@@ -425,7 +427,7 @@ export default function Review() {
             }
             style={{ color: colors.textFaint, fontSize: 13, textDecorationLine: 'underline', textAlign: 'center', marginTop: space.sm }}
           >
-            Something wrong with the scan? Share what the scanner read
+            {t('Something wrong with the scan? Share what the scanner read')}
           </Text>
         )}
     </Screen>

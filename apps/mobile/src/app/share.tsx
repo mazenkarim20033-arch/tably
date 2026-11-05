@@ -12,9 +12,11 @@ import { QrCode } from '../components/QrCode';
 import { useTheme } from '../theme/ThemeProvider';
 import { listBills, shareUrl, type MyBill } from '../lib/myBills';
 import { success } from '../lib/haptics';
+import { t, useLang } from '../lib/i18n';
 
 export default function ShareScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  useLang();
   const { colors, space, font, shadow } = useTheme();
   const [bill, setBill] = useState<MyBill | null | undefined>(undefined);
   const pop = useRef(new Animated.Value(0)).current;
@@ -36,7 +38,7 @@ export default function ShareScreen() {
     );
   }
   const url = shareUrl(bill.shareToken);
-  const send = () => Share.share({ message: `Pick what you had on our bill at ${bill.store}: ${url}`, url });
+  const send = () => Share.share({ message: t('Pick what you had on our bill at {store}: {url}', { store: bill.store, url }), url });
 
   return (
     <Screen
@@ -58,7 +60,7 @@ export default function ShareScreen() {
           </LinearGradient>
         </Animated.View>
         <View style={{ alignItems: 'center', gap: 4 }}>
-          <Text style={{ ...font.callout, color: colors.success, fontWeight: '600' }}>Bill created</Text>
+          <Text style={{ ...font.callout, color: colors.success, fontWeight: '600' }}>{t('Bill created')}</Text>
           <Text style={{ ...font.largeTitle, color: colors.text, textAlign: 'center' }}>{bill.store}</Text>
           <Text style={{ ...font.title, fontSize: 22, color: colors.textMuted }}>{formatAmount(bill.total, bill.currency)}</Text>
         </View>
@@ -67,19 +69,19 @@ export default function ShareScreen() {
       <Card style={{ marginTop: space.md, gap: space.sm }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <Icon name="link" size={16} color={colors.textMuted} />
-          <Text style={{ ...font.footnote, color: colors.textMuted, fontWeight: '600' }}>Link for your friends</Text>
+          <Text style={{ ...font.footnote, color: colors.textMuted, fontWeight: '600' }}>{t('Link for your friends')}</Text>
         </View>
         <Text selectable style={{ ...font.callout, color: colors.text }}>{url}</Text>
-        <Text style={{ ...font.footnote, color: colors.textFaint }}>Touch and hold the link to copy it.</Text>
+        <Text style={{ ...font.footnote, color: colors.textFaint }}>{t('Touch and hold the link to copy it.')}</Text>
       </Card>
       <Card style={{ gap: space.sm }}>
-        <Text style={{ ...font.footnote, color: colors.textMuted, fontWeight: '600' }}>Friends next to you can scan this</Text>
+        <Text style={{ ...font.footnote, color: colors.textMuted, fontWeight: '600' }}>{t('Friends next to you can scan this')}</Text>
         <QrCode value={url} />
       </Card>
       <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 4 }}>
         <Icon name="lock" size={16} color={colors.textFaint} />
         <Text style={{ ...font.footnote, color: colors.textFaint, flex: 1 }}>
-          Anyone with this link can pick items on this bill, so share it only with the people eating with you. It expires in 30 days.
+          {t('Anyone with this link can pick items on this bill, so share it only with the people eating with you. It expires in 30 days.')}
         </Text>
       </View>
     </Screen>

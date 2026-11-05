@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Pressable, Text, View, type ViewStyle } from 'react-native';
 import { useTheme } from '../theme/ThemeProvider';
+import { t } from '../lib/i18n';
 import { Icon } from './Icon';
 
 /** A rounded surface. `tone` outlines it: amber when something needs a look, red when something is wrong. */
@@ -42,10 +43,10 @@ export function Section({
     <Card tone={tone}>
       <Pressable onPress={onToggle} accessibilityRole="button" accessibilityState={{ expanded: open }} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.sm }}>
         <View style={{ flex: 1, gap: 2 }}>
-          <Text style={{ ...font.headline, color: colors.text }}>{title}</Text>
-          {!open && summary ? <Text numberOfLines={2} style={{ ...font.footnote, color: colors.textMuted }}>{summary}</Text> : null}
+          <Text style={{ ...font.headline, color: colors.text }}>{t(title)}</Text>
+          {!open && summary ? <Text numberOfLines={2} style={{ ...font.footnote, color: colors.textMuted }}>{t(summary)}</Text> : null}
         </View>
-        <Text style={{ ...font.callout, color: colors.accent, fontWeight: '600' }}>{open ? 'Done' : 'Edit'}</Text>
+        <Text style={{ ...font.callout, color: colors.accent, fontWeight: '600' }}>{open ? t('Done') : t('Edit')}</Text>
       </Pressable>
       {open ? <View style={{ gap: space.sm }}>{children}</View> : null}
     </Card>
@@ -57,7 +58,7 @@ export function SectionTitle({ children, right }: { children: ReactNode; right?:
   const { colors, font, space } = useTheme();
   return (
     <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginTop: space.sm }}>
-      <Text accessibilityRole="header" style={{ ...font.title, fontSize: 20, color: colors.text }}>{children}</Text>
+      <Text accessibilityRole="header" style={{ ...font.title, fontSize: 20, color: colors.text }}>{typeof children === 'string' ? t(children) : children}</Text>
       {right}
     </View>
   );
@@ -93,8 +94,8 @@ export function ListRow({
         </View>
       ) : null}
       <View style={{ flex: 1 }}>
-        <Text style={{ ...font.body, color: c, fontWeight: '500' }}>{title}</Text>
-        {detail ? <Text style={{ ...font.footnote, color: colors.textMuted }}>{detail}</Text> : null}
+        <Text style={{ ...font.body, color: c, fontWeight: '500' }}>{t(title)}</Text>
+        {detail ? <Text style={{ ...font.footnote, color: colors.textMuted }}>{t(detail)}</Text> : null}
       </View>
       <Icon name="chevron-right" size={18} color={colors.textFaint} />
     </Pressable>

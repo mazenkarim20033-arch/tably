@@ -5,6 +5,7 @@ import { brand } from '@tably/core';
 import { useTheme } from '../theme/ThemeProvider';
 import { Icon, type IconName } from './Icon';
 import { tap } from '../lib/haptics';
+import { t, useLang } from '../lib/i18n';
 
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'quiet';
 type Props = {
@@ -20,6 +21,7 @@ type Props = {
 
 /** One button for the whole app: a gradient primary, a soft secondary, a text-only ghost and a red danger. */
 export function Button({ label, onPress, variant = 'primary', icon, loading, disabled, size = 'md' }: Props) {
+  useLang();
   const { colors, radius, font, shadow, soft } = useTheme();
   const scale = useRef(new Animated.Value(1)).current;
   const press = (to: number) => Animated.spring(scale, { toValue: to, useNativeDriver: true, speed: 40, bounciness: 0 }).start();
@@ -32,7 +34,7 @@ export function Button({ label, onPress, variant = 'primary', icon, loading, dis
   const content = (
     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height, paddingHorizontal: size === 'sm' ? 16 : 22 }}>
       {loading ? <ActivityIndicator color={textColor} /> : icon ? <Icon name={icon} size={size === 'sm' ? 16 : 19} color={textColor} /> : null}
-      <Text style={{ ...font.headline, fontSize, color: textColor, letterSpacing: 0.1 }}>{label}</Text>
+      <Text style={{ ...font.headline, fontSize, color: textColor, letterSpacing: 0.1 }}>{t(label)}</Text>
     </View>
   );
 

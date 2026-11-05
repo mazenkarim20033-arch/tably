@@ -4,6 +4,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router } from 'expo-router';
 import { useTheme } from '../theme/ThemeProvider';
 import { Icon } from './Icon';
+import { t, useLang } from '../lib/i18n';
 
 /**
  * The frame every screen shares: a top bar with a back button, a large title, content that scrolls, and an optional
@@ -24,6 +25,7 @@ export function Screen({
   children: ReactNode;
   gap?: number;
 }) {
+  useLang();
   const { colors, space, font, dark } = useTheme();
   const insets = useSafeAreaInsets();
   const bottom = footer ? 0 : insets.bottom;
@@ -35,7 +37,7 @@ export function Screen({
             <Pressable
               onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
               accessibilityRole="button"
-              accessibilityLabel="Back"
+              accessibilityLabel={t('Back')}
               hitSlop={8}
               style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceMuted }}
             >
@@ -47,8 +49,8 @@ export function Screen({
       )}
       {title ? (
         <View style={{ gap: 4 }}>
-          <Text accessibilityRole="header" style={{ ...font.largeTitle, color: colors.text }}>{title}</Text>
-          {typeof subtitle === 'string' ? <Text style={{ ...font.callout, color: colors.textMuted }}>{subtitle}</Text> : subtitle ?? null}
+          <Text accessibilityRole="header" style={{ ...font.largeTitle, color: colors.text }}>{t(title)}</Text>
+          {typeof subtitle === 'string' ? <Text style={{ ...font.callout, color: colors.textMuted }}>{t(subtitle)}</Text> : subtitle ?? null}
         </View>
       ) : null}
     </>

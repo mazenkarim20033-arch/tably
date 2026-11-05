@@ -12,6 +12,7 @@ import { Card, SectionTitle } from '../components/Card';
 import { useTheme } from '../theme/ThemeProvider';
 import { useBills } from '../lib/useBills';
 import { loadPayee } from '../lib/myBills';
+import { t, useLang } from '../lib/i18n';
 
 const STEPS: Array<{ icon: IconName; title: string; body: string }> = [
   { icon: 'camera', title: 'Scan the receipt', body: 'Take a photo. TABLY reads the items and checks the total.' },
@@ -20,6 +21,7 @@ const STEPS: Array<{ icon: IconName; title: string; body: string }> = [
 ];
 
 export default function Home() {
+  useLang();
   const { colors, space, font, soft, dark } = useTheme();
   const insets = useSafeAreaInsets();
   const { rows } = useBills();
@@ -49,10 +51,10 @@ export default function Home() {
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
             {!first && rows !== null && (
               <Pressable onPress={() => router.push('/bills')} accessibilityRole="button" hitSlop={10}>
-                <Text style={{ ...font.callout, color: colors.accent, fontWeight: '600' }}>All bills</Text>
+                <Text style={{ ...font.callout, color: colors.accent, fontWeight: '600' }}>{t('All bills')}</Text>
               </Pressable>
             )}
-            <Pressable onPress={() => router.push('/about')} accessibilityRole="button" accessibilityLabel="About and privacy" hitSlop={12}>
+            <Pressable onPress={() => router.push('/about')} accessibilityRole="button" accessibilityLabel={t('About and privacy')} hitSlop={12}>
               <Icon name="info" size={22} color={colors.textMuted} />
             </Pressable>
           </View>
@@ -61,9 +63,9 @@ export default function Home() {
         {recent.length === 0 ? (
           <>
             <View style={{ gap: space.sm, marginTop: space.lg }}>
-              <Text style={{ ...font.largeTitle, fontSize: 38, lineHeight: 44, color: colors.text }}>Split the bill,{'\n'}not the friendship.</Text>
+              <Text style={{ ...font.largeTitle, fontSize: 38, lineHeight: 44, color: colors.text }}>{t('Split the bill,')}{'\n'}{t('not the friendship.')}</Text>
               <Text style={{ ...font.body, color: colors.textMuted, maxWidth: 320 }}>
-                Scan a receipt, send one link, and everyone picks and pays their own share.
+                {t('Scan a receipt, send one link, and everyone picks and pays their own share.')}
               </Text>
             </View>
             <SectionTitle>How it works</SectionTitle>
@@ -74,8 +76,8 @@ export default function Home() {
                     <Icon name={s.icon} size={22} color={colors.accent} />
                   </View>
                   <View style={{ flex: 1, gap: 2 }}>
-                    <Text style={{ ...font.headline, color: colors.text }}>{n + 1}. {s.title}</Text>
-                    <Text style={{ ...font.footnote, color: colors.textMuted }}>{s.body}</Text>
+                    <Text style={{ ...font.headline, color: colors.text }}>{n + 1}. {t(s.title)}</Text>
+                    <Text style={{ ...font.footnote, color: colors.textMuted }}>{t(s.body)}</Text>
                   </View>
                 </View>
               ))}
@@ -84,8 +86,8 @@ export default function Home() {
         ) : (
           <>
             <View style={{ gap: 4, marginTop: space.sm }}>
-              <Text style={{ ...font.largeTitle, color: colors.text }}>Your bills</Text>
-              <Text style={{ ...font.callout, color: colors.textMuted }}>Pick up where you left off.</Text>
+              <Text style={{ ...font.largeTitle, color: colors.text }}>{t('Your bills')}</Text>
+              <Text style={{ ...font.callout, color: colors.textMuted }}>{t('Pick up where you left off.')}</Text>
             </View>
             <View style={{ gap: space.sm }}>
               {recent.map((b) => <BillCard key={b.id} bill={b} />)}
@@ -99,9 +101,9 @@ export default function Home() {
                 <Icon name="wallet" size={22} color={colors.accent} />
               </View>
               <View style={{ flex: 1, gap: 2 }}>
-                <Text style={{ ...font.headline, color: colors.text }}>{paySaved ? 'Payment details' : 'Add your payment details'}</Text>
+                <Text style={{ ...font.headline, color: colors.text }}>{paySaved ? t('Payment details') : t('Add your payment details')}</Text>
                 <Text style={{ ...font.footnote, color: colors.textMuted }}>
-                  {paySaved ? 'Saved. Every new bill uses them.' : 'Save your InstaPay link once, so friends can pay you in one tap.'}
+                  {paySaved ? t('Saved. Every new bill uses them.') : t('Save your InstaPay link once, so friends can pay you in one tap.')}
                 </Text>
               </View>
               <Icon name="chevron-right" size={18} color={colors.textFaint} />

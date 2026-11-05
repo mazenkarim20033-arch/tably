@@ -15,6 +15,7 @@ import {
 import { getAdminToken, loadPayee, shareUrl, updateShareToken } from '../../lib/myBills';
 import { startEditDraft } from '../../lib/draftStore';
 import { agoLabel, groupReminder, owing, reminderFor } from '../../lib/reminders';
+import { t, useLang } from '../../lib/i18n';
 
 const LABEL: Record<string, { text: string; tone: Tone }> = {
   initiated: { text: 'Payment started', tone: 'neutral' },
@@ -23,10 +24,11 @@ const LABEL: Record<string, { text: string; tone: Tone }> = {
   failed: { text: 'Rejected', tone: 'danger' },
   expired: { text: 'Expired', tone: 'neutral' },
   cancelled: { text: 'Cancelled', tone: 'neutral' },
-};
+}; // the badge translates the text
 
 /** Creator dashboard. Money is "confirmed" only by the creator tapping Confirm after checking their own account. */
 export default function BillScreen() {
+  useLang();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors, space, font } = useTheme();
   const [bill, setBill] = useState<AdminBill | null>(null);
@@ -38,11 +40,11 @@ export default function BillScreen() {
   const load = useCallback(async () => {
     try {
       const token = await getAdminToken(id);
-      if (!token) return setError('This phone does not hold the admin key for this bill.');
+      if (!token) return setError(t('This phone does not hold the admin key for this bill.'));
       setBill(await getAdminBill(id, token));
       setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not load the bill.');
+      setError(e instanceof Error ? e.message : t('Could not load the bill.'));
     }
   }, [id]);
 
@@ -62,7 +64,7 @@ export default function BillScreen() {
       if (r && typeof r === 'object' && 'items' in r) setBill(r as AdminBill);
       else await load();
     } catch (e) {
-      Alert.alert('Could not do that', e instanceof Error ? e.message : 'Please try again.');
+      Alert.alert(t('Could not do that'), e instanceof Error ? e.message : t('Please try again.'));
     }
     setBusy(false);
   }
@@ -71,11 +73,11 @@ export default function BillScreen() {
   function confirmPicked(list: AdminPayment[], cur: string) {
     const sum = list.reduce((t, p) => t + p.amount, 0);
     Alert.alert(
-      `Confirm ${list.length} ${list.length === 1 ? 'payment' : 'payments'}?`,
-      `That is ${formatAmount(sum, cur)} in total. Only confirm payments you can see in your own bank or InstaPay account.`,
+      list.length === 1 ? t('Confirm {n} payment?', { n: 1 }) : t('Confirm {n} payments?', { n: list.length }),
+      t('That is {amount} in total. Only confirm payments you can see in your own bank or InstaPay account.', { amount: formatAmount(sum, cur) }),
       [
-        { text: 'Not yet', style: 'cancel' },
-        { text: `Yes, confirm ${formatAmount(sum, cur)}`, onPress: () => void doConfirm(list) },
+        { text: t('Not yet'), style: 'cancel' },
+        { text: t('Yes, confirm {amount}', { amount: formatAmount(sum, cur) }), onPress: () => void doConfirm(list) },
       ],
     );
   }
@@ -94,13 +96,13 @@ export default function BillScreen() {
     }
     setPicked(new Set());
     setBusy(false);
-    if (failed.length > 0) Alert.alert('Some could not be confirmed', `${failed.join(', ')}. Pull down to refresh and try again.`);
+    if (failed.length > 0) Alert.alert(t('Some could not be confirmed'), t('{names}. Pull down to refresh and try again.', { names: failed.join(', ') }));
   }
 
   function notReceived(p: AdminPayment) {
-    Alert.alert(`Mark ${p.participant_name}'s payment as not received?`, 'They will be told it was not found and can pay again.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Not received', style: 'destructive', onPress: () => void act((t) => rejectPayment(id, t, p.id)) },
+    Alert.alert(t("Mark {name}'s payment as not received?", { name: p.participant_name }), t('They will be told it was not found and can pay again.'), [
+      { text: t('Cancel'), style: 'cancel' },
+      { text: t('Not received'), style: 'destructive', onPress: () => void act((t) => rejectPayment(id, t, p.id)) },
     ]);
   }
 
@@ -113,14 +115,14 @@ export default function BillScreen() {
   }
 
   function closeFlow(b: AdminBill) {
-    void act(async (t) => {
+    void act(async (token) => {
       try {
-        return await closeBill(id, t);
+        return await closeBill(id, token);
       } catch (e) {
         if (e instanceof ApiProblem && e.code === 'unsettled') {
-          Alert.alert('Not settled yet', `${e.message}\n\nClose anyway? Nobody can pick items or pay after it is closed. You can reopen it.`, [
-            { text: 'Keep open', style: 'cancel' },
-            { text: 'Close anyway', style: 'destructive', onPress: () => void act((tt) => closeBill(id, tt, true)) },
+          Alert.alert(t('Not settled yet'), t('{message}\n\nClose anyway? Nobody can pick items or pay after it is closed. You can reopen it.', { message: e.message }), [
+            { text: t('Keep open'), style: 'cancel' },
+            { text: t('Close anyway'), style: 'destructive', onPress: () => void act((tt) => closeBill(id, tt, true)) },
           ]);
           return b;
         }
@@ -131,9 +133,9 @@ export default function BillScreen() {
 
   /** Where friends pay: use the details saved on this phone, or go and edit them. */
   function paymentMenu() {
-    Alert.alert('Payment details', 'These are what your friends see when they pay.', [
+    Alert.alert(t('Payment details'), t('These are what your friends see when they pay.'), [
       {
-        text: 'Use my saved details',
+        text: t('Use my saved details'),
         onPress: async () => {
           const saved = await loadPayee();
           if (!saved) return void router.push('/payment');
@@ -142,33 +144,33 @@ export default function BillScreen() {
           setBusy(true);
           try {
             setBill(await updatePayee(id, token, saved));
-            Alert.alert('Updated', 'Friends now see your saved payment details on this bill.');
+            Alert.alert(t('Updated'), t('Friends now see your saved payment details on this bill.'));
           } catch (e) {
-            Alert.alert('Could not update', e instanceof Error ? e.message : 'Please try again.');
+            Alert.alert(t('Could not update'), e instanceof Error ? e.message : t('Please try again.'));
           }
           setBusy(false);
         },
       },
-      { text: 'Edit my saved details', onPress: () => router.push('/payment') },
-      { text: 'Cancel', style: 'cancel' },
+      { text: t('Edit my saved details'), onPress: () => router.push('/payment') },
+      { text: t('Cancel'), style: 'cancel' },
     ]);
   }
 
   function linkMenu(b: AdminBill) {
-    Alert.alert('Share link', b.share_disabled ? 'The link is turned off.' : 'Anyone with the link can pick items.', [
+    Alert.alert(t('Share link'), b.share_disabled ? t('The link is turned off.') : t('Anyone with the link can pick items.'), [
       b.share_disabled
-        ? { text: 'Turn link back on', onPress: () => void act((t) => updateLink(id, t, { disabled: false })) }
-        : { text: 'Turn link off', style: 'destructive', onPress: () => void act((t) => updateLink(id, t, { disabled: true })) },
-      { text: 'Extend 7 days', onPress: () => void act((t) => updateLink(id, t, { extend_days: 7 })) },
+        ? { text: t('Turn link back on'), onPress: () => void act((t) => updateLink(id, t, { disabled: false })) }
+        : { text: t('Turn link off'), style: 'destructive', onPress: () => void act((t) => updateLink(id, t, { disabled: true })) },
+      { text: t('Extend 7 days'), onPress: () => void act((t) => updateLink(id, t, { extend_days: 7 })) },
       {
-        text: 'Make a new link',
+        text: t('Make a new link'),
         onPress: () => void act(async (t) => {
           const r = await updateLink(id, t, { rotate: true });
           await updateShareToken(id, r.share_token);
           return getAdminBill(id, t);
         }),
       },
-      { text: 'Cancel', style: 'cancel' },
+      { text: t('Cancel'), style: 'cancel' },
     ]);
   }
 
@@ -178,37 +180,37 @@ export default function BillScreen() {
         {error ? <Callout tone="danger">{error}</Callout> : (
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: space.md }}>
             <ActivityIndicator size="large" color={colors.accent} />
-            <Text style={{ ...font.callout, color: colors.textMuted }}>Loading your bill…</Text>
+            <Text style={{ ...font.callout, color: colors.textMuted }}>{t('Loading your bill…')}</Text>
           </View>
         )}
       </Screen>
     );
   }
   const cur = bill.currency;
-  const t = bill.totals;
+  const tt = bill.totals;
   const closed = bill.status === 'closed';
   const waiting = bill.payments.filter((p) => p.status === 'awaiting_confirmation');
   const owes = owing(bill);
-  const paidShare = t.total > 0 ? t.collected / t.total : 0;
+  const paidShare = tt.total > 0 ? tt.collected / tt.total : 0;
   const state: { label: string; tone: Tone } = closed
     ? { label: 'Closed', tone: 'neutral' }
-    : bill.share_disabled ? { label: 'Open · link is off', tone: 'warning' } : { label: 'Open', tone: 'success' };
+    : bill.share_disabled ? { label: 'Open · link is off', tone: 'warning' } : { label: 'Open', tone: 'success' }; // translated by the badge
 
   return (
     <Screen title={bill.store} subtitle={<Badge label={state.label} tone={state.tone} />} onRefresh={load}>
       {/* The money at a glance. */}
       <Card style={{ gap: space.md }}>
         <View style={{ gap: 2 }}>
-          <Text style={{ ...font.caption, color: colors.textFaint }}>Collected so far</Text>
+          <Text style={{ ...font.caption, color: colors.textFaint }}>{t('Collected so far')}</Text>
           <Text style={{ ...font.largeTitle, color: colors.text }}>
-            {formatAmount(t.collected, cur)} <Text style={{ ...font.callout, color: colors.textMuted, fontWeight: '500' }}>of {formatAmount(t.total, cur)}</Text>
+            {formatAmount(tt.collected, cur)} <Text style={{ ...font.callout, color: colors.textMuted, fontWeight: '500' }}>{t('of {amount}', { amount: formatAmount(tt.total, cur) })}</Text>
           </Text>
         </View>
         <ProgressBar value={paidShare} tone={paidShare >= 1 ? 'success' : 'accent'} />
         <View style={{ flexDirection: 'row', gap: space.sm }}>
-          <Stat label="Waiting on you" value={formatAmount(t.awaiting, cur)} tone={t.awaiting > 0 ? 'warning' : undefined} />
-          <Stat label="Still to collect" value={formatAmount(t.outstanding, cur)} />
-          <Stat label="Not picked yet" value={formatAmount(t.unassigned, cur)} tone={t.unassigned > 0 ? 'warning' : undefined} />
+          <Stat label="Waiting on you" value={formatAmount(tt.awaiting, cur)} tone={tt.awaiting > 0 ? 'warning' : undefined} />
+          <Stat label="Still to collect" value={formatAmount(tt.outstanding, cur)} />
+          <Stat label="Not picked yet" value={formatAmount(tt.unassigned, cur)} tone={tt.unassigned > 0 ? 'warning' : undefined} />
         </View>
       </Card>
       {!bill.payee && <Callout tone="warning">No payment details on this bill, so friends cannot pay yet.</Callout>}
@@ -223,7 +225,7 @@ export default function BillScreen() {
             <SectionTitle>Check your bank once</SectionTitle>
             <Card tone="warning" style={{ gap: space.md }}>
               <Text style={{ ...font.callout, color: colors.textMuted }}>
-                Open your bank or InstaPay and look for these {list.length === 1 ? 'deposit' : `${list.length} deposits`}. Tick the ones you can see, then confirm them together.
+                {list.length === 1 ? t('Open your bank or InstaPay and look for this deposit. Tick the one you can see, then confirm it.') : t('Open your bank or InstaPay and look for these {n} deposits. Tick the ones you can see, then confirm them together.', { n: list.length })}
               </Text>
               {list.map((p) => {
                 const on = picked.has(p.id);
@@ -241,17 +243,17 @@ export default function BillScreen() {
                       <Avatar name={p.participant_name} size={36} />
                       <View style={{ flex: 1 }}>
                         <Text style={{ ...font.headline, color: colors.text }}>{p.participant_name}</Text>
-                        <Text style={{ ...font.footnote, color: colors.textMuted }}>Note {p.reference}{p.payer_note ? ` · theirs: ${p.payer_note}` : ''}</Text>
+                        <Text style={{ ...font.footnote, color: colors.textMuted }}>{p.payer_note ? t('Note {ref} · theirs: {note}', { ref: p.reference, note: p.payer_note }) : t('Note {ref}', { ref: p.reference })}</Text>
                       </View>
                       <Text style={{ ...font.number, color: colors.text }}>{formatAmount(p.amount, cur)}</Text>
                     </Pressable>
-                    <Text onPress={() => notReceived(p)} style={{ ...font.footnote, color: colors.danger, fontWeight: '600', marginLeft: 26 + 12 + 36 + 12 }}>Not received</Text>
+                    <Text onPress={() => notReceived(p)} style={{ ...font.footnote, color: colors.danger, fontWeight: '600', marginInlineStart: 26 + 12 + 36 + 12 }}>{t('Not received')}</Text>
                   </View>
                 );
               })}
               <View style={{ gap: space.sm }}>
                 <Button
-                  label={chosen.length === 0 ? 'Tick what you can see' : `Confirm ${chosen.length} · ${formatAmount(chosenSum, cur)}`}
+                  label={chosen.length === 0 ? 'Tick what you can see' : t('Confirm {n} · {amount}', { n: chosen.length, amount: formatAmount(chosenSum, cur) })}
                   icon="check"
                   onPress={() => confirmPicked(chosen, cur)}
                   disabled={busy || chosen.length === 0}
@@ -260,19 +262,19 @@ export default function BillScreen() {
                   <Button label={all ? 'Untick all' : 'Tick all'} variant="ghost" size="sm" onPress={() => setPicked(all ? new Set() : new Set(list.map((p) => p.id)))} />
                 )}
               </View>
-              <Text style={{ ...font.footnote, color: colors.textFaint }}>Nothing counts as paid until you confirm it here.</Text>
+              <Text style={{ ...font.footnote, color: colors.textFaint }}>{t('Nothing counts as paid until you confirm it here.')}</Text>
             </Card>
           </>
         );
       })()}
 
-      <SectionTitle right={!closed ? <Text onPress={() => Alert.prompt('Add someone', 'For a friend who is not using the link. You will pick their items.', (name) => { if (name?.trim()) void act((tk) => addPerson(id, tk, name.trim())); })} style={{ ...font.callout, color: colors.accent, fontWeight: '600' }}>Add someone</Text> : undefined}>
+      <SectionTitle right={!closed ? <Text onPress={() => Alert.prompt(t('Add someone'), t('For a friend who is not using the link. You will pick their items.'), (name) => { if (name?.trim()) void act((tk) => addPerson(id, tk, name.trim())); })} style={{ ...font.callout, color: colors.accent, fontWeight: '600' }}>{t('Add someone')}</Text> : undefined}>
         People
       </SectionTitle>
       {bill.participants.length === 0 ? (
         <Card>
-          <Text style={{ ...font.callout, color: colors.textMuted }}>Nobody has joined yet. Share the link and people will show up here as they pick their items.</Text>
-          <Button label="Share link" icon="share" variant="secondary" onPress={() => void Share.share({ message: `Pick what you had on our bill at ${bill.store}: ${shareUrl(bill.share_token)}` })} />
+          <Text style={{ ...font.callout, color: colors.textMuted }}>{t('Nobody has joined yet. Share the link and people will show up here as they pick their items.')}</Text>
+          <Button label="Share link" icon="share" variant="secondary" onPress={() => void Share.share({ message: t('Pick what you had on our bill at {store}: {url}', { store: bill.store, url: shareUrl(bill.share_token) }) })} />
         </Card>
       ) : (
         <Card style={{ paddingVertical: space.xs, gap: 0 }}>
@@ -291,8 +293,8 @@ export default function BillScreen() {
                   <Text style={{ color: colors.textFaint }}>›</Text>
                 </Pressable>
                 {canRemind && (
-                  <Text onPress={() => void remind(bill, [p], reminderFor(bill, p))} style={{ ...font.footnote, color: colors.accent, fontWeight: '600', marginLeft: 52 }}>
-                    Remind {p.name}{p.reminder_count > 0 ? ` · reminded ${agoLabel(p.last_reminded_at)}` : ''}
+                  <Text onPress={() => void remind(bill, [p], reminderFor(bill, p))} style={{ ...font.footnote, color: colors.accent, fontWeight: '600', marginInlineStart: 52 }}>
+                    {p.reminder_count > 0 ? t('Remind {name} · reminded {ago}', { name: p.name, ago: agoLabel(p.last_reminded_at) }) : t('Remind {name}', { name: p.name })}
                   </Text>
                 )}
               </View>
@@ -301,10 +303,10 @@ export default function BillScreen() {
         </Card>
       )}
       {!closed && owes.length > 1 && (
-        <Button label={`Remind ${owes.length} people`} icon="bell" variant="secondary" onPress={() => void remind(bill, owes, groupReminder(bill, owes))} disabled={busy} />
+        <Button label={t('Remind {n} people', { n: owes.length })} icon="bell" variant="secondary" onPress={() => void remind(bill, owes, groupReminder(bill, owes))} disabled={busy} />
       )}
       <Text style={{ ...font.footnote, color: colors.textFaint }}>
-        TABLY cannot send texts or notifications. Remind opens your share sheet (WhatsApp, iMessage) so you send the message yourself.
+        {t('TABLY cannot send texts or notifications. Remind opens your share sheet (WhatsApp, iMessage) so you send the message yourself.')}
       </Text>
 
       <SectionTitle>Manage</SectionTitle>
@@ -321,7 +323,7 @@ export default function BillScreen() {
           />
         )}
         {!closed && <ListRow icon="wallet" title="Payment details" detail="Where friends are told to pay" onPress={paymentMenu} disabled={busy} />}
-        <ListRow icon="share" title="Share link" onPress={() => void Share.share({ message: `Pick what you had on our bill at ${bill.store}: ${shareUrl(bill.share_token)}` })} />
+        <ListRow icon="share" title="Share link" onPress={() => void Share.share({ message: t('Pick what you had on our bill at {store}: {url}', { store: bill.store, url: shareUrl(bill.share_token) }) })} />
         <ListRow icon="link" title="Link settings" detail={bill.share_disabled ? 'The link is off' : 'Turn off, extend or replace the link'} onPress={() => linkMenu(bill)} disabled={busy} />
         {closed
           ? <ListRow last icon="refresh" title="Reopen bill" onPress={() => void act((tk) => reopenBill(id, tk))} disabled={busy} />

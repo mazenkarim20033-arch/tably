@@ -12,10 +12,12 @@ import { useTheme } from '../theme/ThemeProvider';
 import {
   addTransfer, assignFor, getAdminBill, removePerson, removeTransfer, type AdminBill, type AdminItem, type ClaimChange,
 } from '../lib/billsApi';
+import { t, useLang } from '../lib/i18n';
 import { getAdminToken } from '../lib/myBills';
 
 /** One person on a bill: fix what they have, cover or be covered by someone, or remove them. */
 export default function Person() {
+  useLang();
   const { id, pid } = useLocalSearchParams<{ id: string; pid: string }>();
   const { colors, space, radius, font } = useTheme();
   const [bill, setBill] = useState<AdminBill | null>(null);
@@ -36,7 +38,7 @@ export default function Person() {
     try {
       setBill(await fn(token));
     } catch (e) {
-      Alert.alert('Could not do that', e instanceof Error ? e.message : 'Please try again.');
+      Alert.alert(t('Could not do that'), e instanceof Error ? e.message : t('Please try again.'));
     }
     setBusy(false);
   }
@@ -47,7 +49,7 @@ export default function Person() {
       <Screen scroll={false}>
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: space.md }}>
           <ActivityIndicator size="large" color={colors.accent} />
-          <Text style={{ ...font.callout, color: colors.textMuted }}>Loading…</Text>
+          <Text style={{ ...font.callout, color: colors.textMuted }}>{t('Loading…')}</Text>
         </View>
       </Screen>
     );
@@ -92,7 +94,7 @@ export default function Person() {
         </View>
         <View style={{ flexDirection: 'row', gap: space.sm, alignItems: 'center', flexWrap: 'wrap' }}>
           {it.quantity === 1
-            ? chip('Has it', units === 1, () => set({ units: units ? 0 : 1 }), !units && max < 1)
+            ? chip(t('Has it'), units === 1, () => set({ units: units ? 0 : 1 }), !units && max < 1)
             : (
               <>
                 {chip('−', false, () => set({ units: units - 1 }), units === 0, true)}
@@ -100,7 +102,7 @@ export default function Person() {
                 {chip('+', false, () => set({ units: units + 1 }), units >= max, true)}
               </>
             )}
-          {chip('Split', shared, () => set({ share: !shared }), !shared && it.quantity - (it.exclusive - units) < 1)}
+          {chip(t('Split'), shared, () => set({ share: !shared }), !shared && it.quantity - (it.exclusive - units) < 1)}
         </View>
       </Card>
     );
@@ -121,14 +123,14 @@ export default function Person() {
         <View style={{ flex: 1, gap: 2 }}>
           <Text numberOfLines={1} style={{ ...font.largeTitle, color: colors.text }}>{me.name}</Text>
           <Text style={{ ...font.callout, color: colors.textMuted }}>
-            Owes <Text style={{ color: colors.text, fontWeight: '700' }}>{formatAmount(me.total, cur)}</Text>
-            {me.adjustment !== 0 ? ` (includes ${formatAmount(me.adjustment, cur)} adjustment)` : ''}
+            {t('Owes')} <Text style={{ color: colors.text, fontWeight: '700' }}>{formatAmount(me.total, cur)}</Text>
+            {me.adjustment !== 0 ? ' ' + t('(includes {amount} adjustment)', { amount: formatAmount(me.adjustment, cur) }) : ''}
           </Text>
         </View>
       </View>
       {locked && (
         <Callout tone="warning" icon="lock">
-          {closed ? 'This bill is closed.' : 'They have started or finished paying, so their items and amount are locked. Reject or cancel their payment to change them.'}
+          {closed ? t('This bill is closed.') : t('They have started or finished paying, so their items and amount are locked. Reject or cancel their payment to change them.')}
         </Callout>
       )}
 
@@ -136,16 +138,16 @@ export default function Person() {
       {bill.items.map(itemRow)}
 
       <SectionTitle>Adjustments</SectionTitle>
-      <Text style={{ ...font.footnote, color: colors.textMuted }}>Move part of what someone owes onto {me.name}. The bill total never changes.</Text>
+      <Text style={{ ...font.footnote, color: colors.textMuted }}>{t('Move part of what someone owes onto {name}. The bill total never changes.', { name: me.name })}</Text>
       {mine.map((tr) => (
         <Card key={tr.id} style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
-          <Text style={{ ...font.callout, color: colors.text, flex: 1 }}>{name(tr.payer_id)} covers {formatAmount(tr.amount, cur)} for {name(tr.beneficiary_id)}</Text>
-          <Text onPress={() => void act((t) => removeTransfer(id, t, tr.id))} style={{ ...font.callout, color: colors.danger, fontWeight: '600' }}>Remove</Text>
+          <Text style={{ ...font.callout, color: colors.text, flex: 1 }}>{t('{payer} covers {amount} for {other}', { payer: name(tr.payer_id), amount: formatAmount(tr.amount, cur), other: name(tr.beneficiary_id) })}</Text>
+          <Text onPress={() => void act((t) => removeTransfer(id, t, tr.id))} style={{ ...font.callout, color: colors.danger, fontWeight: '600' }}>{t('Remove')}</Text>
         </Card>
       ))}
       {!locked && others.length > 0 && (
         <Card style={{ gap: space.md }}>
-          <Text style={{ ...font.callout, color: colors.textMuted }}>{me.name} covers part of:</Text>
+          <Text style={{ ...font.callout, color: colors.textMuted }}>{t('{name} covers part of:', { name: me.name })}</Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
             {others.map((o) => (
               <Pressable
@@ -162,7 +164,7 @@ export default function Person() {
           </View>
           {coverFor && (
             <>
-              <AmountField label={`Amount (${cur})`} value={amount} onChange={setAmount} />
+              <AmountField label={t('Amount ({cur})', { cur })} value={amount} onChange={setAmount} />
               <Button label="Add adjustment" onPress={cover} disabled={busy || !amount || parseAmount(String((amount ?? 0) / 100)) === null} />
             </>
           )}
@@ -172,20 +174,20 @@ export default function Person() {
       {!closed && (
         <View style={{ marginTop: space.md }}>
           <Button
-            label={`Remove ${me.name}`}
+            label={t('Remove {name}', { name: me.name })}
             icon="trash"
             variant="danger"
             disabled={busy}
-            onPress={() => Alert.alert(`Remove ${me.name}?`, 'Their items go back to unclaimed.', [
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'Remove', style: 'destructive', onPress: async () => {
+            onPress={() => Alert.alert(t('Remove {store}?', { store: me.name }), t('Their items go back to unclaimed.'), [
+              { text: t('Cancel'), style: 'cancel' },
+              { text: t('Remove'), style: 'destructive', onPress: async () => {
                 const token = await getAdminToken(id);
                 if (!token) return;
                 try {
                   await removePerson(id, token, pid);
                   router.back();
                 } catch (e) {
-                  Alert.alert('Could not remove', e instanceof Error ? e.message : 'Please try again.');
+                  Alert.alert(t('Could not remove'), e instanceof Error ? e.message : t('Please try again.'));
                 }
               } },
             ])}

@@ -7,18 +7,20 @@ import { Screen } from '../components/Screen';
 import { useTheme } from '../theme/ThemeProvider';
 import { forgetBill } from '../lib/myBills';
 import { useBills } from '../lib/useBills';
+import { t, useLang } from '../lib/i18n';
 
 /** Everything this phone created. Live status comes from the server; if offline, the saved basics still show. */
 export default function Bills() {
+  useLang();
   const { space } = useTheme();
   const { rows, setRows, offline, reload } = useBills();
   const [removing, setRemoving] = useState(false);
 
   const remove = (id: string, store: string) =>
-    Alert.alert(`Remove ${store}?`, 'It is no longer on the server, so this only clears it from this phone.', [
-      { text: 'Cancel', style: 'cancel' },
+    Alert.alert(t('Remove {store}?', { store }), t('It is no longer on the server, so this only clears it from this phone.'), [
+      { text: t('Cancel'), style: 'cancel' },
       {
-        text: 'Remove', style: 'destructive',
+        text: t('Remove'), style: 'destructive',
         onPress: () => {
           if (removing) return;
           setRemoving(true);
@@ -28,7 +30,7 @@ export default function Bills() {
     ]);
 
   return (
-    <Screen title="Bills" subtitle={rows && rows.length > 0 ? `${rows.length} ${rows.length === 1 ? 'bill' : 'bills'} on this phone` : undefined} onRefresh={reload}>
+    <Screen title="Bills" subtitle={rows && rows.length > 0 ? (rows.length === 1 ? t('{n} bill on this phone', { n: 1 }) : t('{n} bills on this phone', { n: rows.length })) : undefined} onRefresh={reload}>
       {offline && <Callout tone="warning" icon="refresh">Could not reach the server. Showing what is saved on this phone.</Callout>}
       {rows && rows.length === 0 && (
         <EmptyState

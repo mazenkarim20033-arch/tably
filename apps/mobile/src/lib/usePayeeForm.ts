@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { loadPayee, type PayeeMethod, type SavedPayee } from './myBills';
+import { t } from './i18n';
 
 /** Telda accepts a @tag or the phone number tied to it; wallets are Egyptian mobile numbers. */
 export const TELDA_OK = /^(@?[A-Za-z0-9._]{2,30}|01[0125]\d{8})$/;
@@ -55,14 +56,14 @@ export function usePayeeForm() {
   };
   const hasPayee = payee.payee_name !== '' && Object.keys(payee).length > 1;
   const ways = [
-    (ipa.trim() || phone.trim() || link.trim()) && 'InstaPay',
-    ...methods.map((m) => (m.kind === 'telda' ? 'Telda' : m.kind === 'wallet' ? m.label ?? 'Wallet' : m.kind === 'cash' ? 'Cash' : m.label)),
+    (ipa.trim() || phone.trim() || link.trim()) && t('InstaPay'),
+    ...methods.map((m) => (m.kind === 'telda' ? 'Telda' : m.kind === 'wallet' ? m.label ?? t('Wallet') : m.kind === 'cash' ? t('Cash') : m.label)),
   ].filter(Boolean).join(', ');
 
   return {
     name, setName, ipa, setIpa, phone, setPhone, link, setLink, telda, setTelda, wallet, setWallet, walletName, setWalletName, cash, setCash,
     teldaOk, walletOk, valid: teldaOk && walletOk, payee, hasPayee,
-    summary: hasPayee ? `${payee.payee_name} · ${ways}` : 'Add where friends should send money.',
+    summary: hasPayee ? `${payee.payee_name} · ${ways}` : t('Add where friends should send money.'),
     loaded, hadSaved,
   };
 }

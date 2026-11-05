@@ -9,12 +9,14 @@ import { useTheme } from '../theme/ThemeProvider';
 import { applyPayeeToBills } from '../lib/applyPayee';
 import { savePayee } from '../lib/myBills';
 import { usePayeeForm } from '../lib/usePayeeForm';
+import { t, useLang } from '../lib/i18n';
 
 /**
  * Where friends should pay you, saved once on this phone. Every new bill uses it automatically, so friends get your
  * InstaPay link without you typing it again; one tap also updates the bills you already made.
  */
 export default function PaymentDetails() {
+  useLang();
   const { colors, font } = useTheme();
   const form = usePayeeForm();
   const [busy, setBusy] = useState(false);
@@ -23,18 +25,18 @@ export default function PaymentDetails() {
     setBusy(true);
     await savePayee(form.payee);
     setBusy(false);
-    Alert.alert('Saved', 'Every new bill will use these. Do you also want to update the bills you already shared?', [
-      { text: 'Just new bills', onPress: () => router.back() },
+    Alert.alert(t('Saved'), t('Every new bill will use these. Do you also want to update the bills you already shared?'), [
+      { text: t('Just new bills'), onPress: () => router.back() },
       {
-        text: 'Update my bills',
+        text: t('Update my bills'),
         onPress: async () => {
           setBusy(true);
           const r = await applyPayeeToBills(form.payee);
           setBusy(false);
           Alert.alert(
-            'Done',
-            `${r.updated} ${r.updated === 1 ? 'bill' : 'bills'} updated.${r.skipped > 0 ? ` ${r.skipped} could not change, because someone already started paying or the bill is gone.` : ''}`,
-            [{ text: 'OK', onPress: () => router.back() }],
+            t('Done'),
+            `${r.updated === 1 ? t('{n} bill updated.', { n: 1 }) : t('{n} bills updated.', { n: r.updated })}${r.skipped > 0 ? t(' {n} could not change, because someone already started paying or the bill is gone.', { n: r.skipped }) : ''}`,
+            [{ text: t('OK'), onPress: () => router.back() }],
           );
         },
       },
@@ -50,7 +52,7 @@ export default function PaymentDetails() {
       {form.loaded && !form.hasPayee && <Callout tone="accent" icon="wallet">Add your name and at least one way to be paid, then tap Save.</Callout>}
       <PayeeFields form={form} />
       <Text style={{ ...font.footnote, color: colors.textFaint }}>
-        These stay on your phone and are shared only with people who open one of your bill links.
+        {t('These stay on your phone and are shared only with people who open one of your bill links.')}
       </Text>
     </Screen>
   );

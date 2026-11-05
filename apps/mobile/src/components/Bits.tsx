@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { Text, View } from 'react-native';
 import { useTheme } from '../theme/ThemeProvider';
 import { Icon, type IconName } from './Icon';
+import { t } from '../lib/i18n';
 import { Button } from './Button';
 
 export type Tone = 'success' | 'warning' | 'danger' | 'accent' | 'neutral';
@@ -23,7 +24,7 @@ export function Badge({ label, tone = 'neutral', dot = true }: { label: string; 
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', paddingVertical: 4, paddingHorizontal: 10, borderRadius: 999, backgroundColor: c.bg }}>
       {dot ? <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: c.fg }} /> : null}
-      <Text style={{ ...font.caption, color: c.fg, fontWeight: '600' }}>{label}</Text>
+      <Text style={{ ...font.caption, color: c.fg, fontWeight: '600' }}>{t(label)}</Text>
     </View>
   );
 }
@@ -63,7 +64,7 @@ export function Callout({ tone = 'warning', icon = 'alert', children }: { tone?:
   return (
     <View style={{ flexDirection: 'row', gap: space.sm, padding: space.md, borderRadius: 14, backgroundColor: c.bg, alignItems: 'flex-start' }}>
       <View style={{ paddingTop: 1 }}><Icon name={icon} size={18} color={c.fg} /></View>
-      <Text style={{ ...font.callout, color: colors.text, flex: 1 }}>{children}</Text>
+      <Text style={{ ...font.callout, color: colors.text, flex: 1 }}>{typeof children === 'string' ? t(children) : children}</Text>
     </View>
   );
 }
@@ -76,8 +77,8 @@ export function EmptyState({ icon, title, body, action, onAction }: { icon: Icon
       <View style={{ width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center', backgroundColor: soft.accent, marginBottom: space.sm }}>
         <Icon name={icon} size={30} color={colors.accent} />
       </View>
-      <Text style={{ ...font.title, fontSize: 20, color: colors.text, textAlign: 'center' }}>{title}</Text>
-      <Text style={{ ...font.callout, color: colors.textMuted, textAlign: 'center', maxWidth: 300 }}>{body}</Text>
+      <Text style={{ ...font.title, fontSize: 20, color: colors.text, textAlign: 'center' }}>{t(title)}</Text>
+      <Text style={{ ...font.callout, color: colors.textMuted, textAlign: 'center', maxWidth: 300 }}>{t(body)}</Text>
       {action && onAction ? <View style={{ marginTop: space.md, alignSelf: 'stretch' }}><Button label={action} onPress={onAction} /></View> : null}
     </View>
   );
@@ -89,7 +90,7 @@ export function Stat({ label, value, tone }: { label: string; value: string; ton
   const c = tone ? toneColors(tone, colors, soft).fg : colors.text;
   return (
     <View style={{ flex: 1, gap: 2 }}>
-      <Text style={{ ...font.caption, color: colors.textFaint }}>{label}</Text>
+      <Text style={{ ...font.caption, color: colors.textFaint }}>{t(label)}</Text>
       <Text numberOfLines={1} adjustsFontSizeToFit style={{ ...font.number, color: c }}>{value}</Text>
     </View>
   );

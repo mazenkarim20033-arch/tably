@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Text, TextInput, View, type TextInputProps } from 'react-native';
 import { parseAmount, type Minor } from '@tably/core';
 import { useTheme } from '../theme/ThemeProvider';
+import { t } from '../lib/i18n';
 
 const fmt = (m: Minor | null) => (m === null ? '' : (m / 100).toFixed(2));
 
@@ -15,11 +16,12 @@ export function TextField({
   const border = uncertain ? colors.warning : focused ? colors.accent : 'transparent';
   return (
     <View style={{ gap: 6, width }}>
-      {label && <Text style={{ ...font.footnote, fontWeight: '500', color: uncertain ? colors.warning : colors.textMuted }}>{label}{uncertain ? ' · check' : ''}</Text>}
+      {label && <Text style={{ ...font.footnote, fontWeight: '500', color: uncertain ? colors.warning : colors.textMuted }}>{t(label)}{uncertain ? t(' · check') : ''}</Text>}
       <TextInput
         value={value}
         onChangeText={onChange}
         placeholderTextColor={colors.textFaint}
+        placeholder={typeof rest.placeholder === 'string' ? t(rest.placeholder) : undefined}
         selectionColor={colors.accent}
         keyboardAppearance={dark ? 'dark' : 'light'}
         onFocus={(e) => { setFocused(true); onFocus?.(e); }}
