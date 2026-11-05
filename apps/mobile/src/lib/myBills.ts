@@ -91,3 +91,16 @@ export async function forgetBill(id: string): Promise<void> {
     await SecureStore.deleteItemAsync(tokenKey(id));
   } catch { /* already gone */ }
 }
+
+/** Remove everything this phone keeps: the bills list and its keys, the saved payment details and saved receipt photos. */
+export async function clearAllLocal(): Promise<void> {
+  for (const b of await listBills()) await forgetBill(b.id);
+  try {
+    const f = payeeFile();
+    if (f.exists) f.delete();
+  } catch { /* nothing to delete */ }
+  try {
+    const drafts = new Directory(Paths.document, 'drafts');
+    if (drafts.exists) drafts.delete();
+  } catch { /* nothing to delete */ }
+}

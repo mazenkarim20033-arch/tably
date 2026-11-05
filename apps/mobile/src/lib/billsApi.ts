@@ -18,10 +18,10 @@ export class MismatchError extends Error {
 export interface Payee { payee_name: string; instapay_address?: string; instapay_phone?: string; instapay_link?: string; methods?: import('./myBills').PayeeMethod[] }
 
 export function toPayload(r: Receipt, acceptMismatch: boolean, payee?: Payee) {
-  const items = r.items.map((i) => {
+  const items = r.items.map((i, n) => {
     if (i.lineTotal === null) throw new Error(`"${i.description || 'An item'}" has no price.`);
-    if (i.description.trim() === '') throw new Error('Every item needs a name.');
-    return { description: i.description.trim(), quantity: i.quantity, line_total: i.lineTotal };
+    // The name is only a label for friends; an unread one becomes "Item 3" instead of stopping the bill.
+    return { description: i.description.trim() || `Item ${n + 1}`, quantity: i.quantity, line_total: i.lineTotal };
   });
   return {
     store: (r.merchant ?? '').trim() || 'Receipt',

@@ -46,11 +46,16 @@ export default function Home() {
             <Logo size={36} />
             <Text style={{ ...font.title, fontSize: 21, letterSpacing: 1.5, color: colors.text }}>{brand.name}</Text>
           </View>
-          {!first && rows !== null && (
-            <Pressable onPress={() => router.push('/bills')} accessibilityRole="button" hitSlop={10}>
-              <Text style={{ ...font.callout, color: colors.accent, fontWeight: '600' }}>All bills</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+            {!first && rows !== null && (
+              <Pressable onPress={() => router.push('/bills')} accessibilityRole="button" hitSlop={10}>
+                <Text style={{ ...font.callout, color: colors.accent, fontWeight: '600' }}>All bills</Text>
+              </Pressable>
+            )}
+            <Pressable onPress={() => router.push('/about')} accessibilityRole="button" accessibilityLabel="About and privacy" hitSlop={12}>
+              <Icon name="info" size={22} color={colors.textMuted} />
             </Pressable>
-          )}
+          </View>
         </View>
 
         {recent.length === 0 ? (

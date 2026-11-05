@@ -4,6 +4,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { brand } from '@tably/core';
 import { useTheme } from '../theme/ThemeProvider';
 import { Icon, type IconName } from './Icon';
+import { tap } from '../lib/haptics';
 
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'quiet';
 type Props = {
@@ -41,7 +42,10 @@ export function Button({ label, onPress, variant = 'primary', icon, loading, dis
         accessibilityRole="button"
         accessibilityState={{ disabled: !!off, busy: !!loading }}
         disabled={off}
-        onPress={onPress}
+        onPress={() => {
+          if (v === 'primary' || v === 'danger') tap();
+          onPress();
+        }}
         onPressIn={() => press(0.97)}
         onPressOut={() => press(1)}
         style={[

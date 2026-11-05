@@ -234,7 +234,7 @@ export default function Review() {
               );
             } else void create();
           }}
-          disabled={creating || !form.valid || r.items.length === 0 || r.items.some((i) => i.lineTotal === null || i.description.trim() === '')} />
+          disabled={creating || !form.valid || r.items.length === 0 || r.items.some((i) => i.lineTotal === null)} />
         <Text style={{ ...font.footnote, color: colors.textFaint, textAlign: 'center' }}>{draft.editBillId ? 'People on the link see the changes straight away.' : 'You will get a private link to share. Your edits are saved on this phone.'}</Text>
               </>
       }
@@ -301,7 +301,7 @@ export default function Review() {
                   <Text style={{ ...font.caption, color: colors.textMuted, fontWeight: '700' }}>{i.quantity}×</Text>
                 </View>
                 <View style={{ flex: 1, gap: 2 }}>
-                  <Text numberOfLines={open ? undefined : 2} style={{ color: i.description.trim() ? colors.text : colors.textFaint, fontSize: 16 }}>{i.description.trim() || 'Unnamed item'}</Text>
+                  <Text numberOfLines={open ? undefined : 2} style={{ color: i.description.trim() ? colors.text : colors.textFaint, fontSize: 16 }}>{i.description.trim() || 'Item (no name read)'}</Text>
                   {!open && look && reason ? <Text numberOfLines={2} style={{ color: colors.warning, fontSize: 13 }}>{reason}</Text> : null}
                   {i.quantity > 1 && i.unitPrice !== null && !open ? <Text style={{ color: colors.textFaint, fontSize: 13 }}>{money2(i.unitPrice)} each</Text> : null}
                 </View>

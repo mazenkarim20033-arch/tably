@@ -518,7 +518,7 @@ function interpret(input: OcrLine[], layout: Layout, opts: { attach: 'indent' | 
       unparsed.push(text.trim());
       continue;
     }
-    const obsConf = input[r.price.obs]?.confidence ?? 1;
+    const obsConf = numberConfidence(input[r.price.obs]);
     if (obsConf < 0.6) flags.push('low-ocr-confidence');
     const alts = alternatesOf(input, layout, r.price).filter((a) => a.value !== total);
     // A runner-up reading nearly as sure as the chosen one means the scanner itself could not decide.
@@ -554,7 +554,7 @@ function interpret(input: OcrLine[], layout: Layout, opts: { attach: 'indent' | 
   let discounts = 0;
   const discountLines: Minor[] = [];
   const take = (role: MoneyRole, value: Minor, label: string, order: number, tok: Token) => {
-    const conf = input[tok.obs]?.confidence ?? 1;
+    const conf = numberConfidence(input[tok.obs]);
     const isNew = role === 'discount' || role === 'total' || totals[role] === undefined;
     if (role === 'discount') {
       discounts += value > 0 ? -value : value;
@@ -728,6 +728,15 @@ function interpret(input: OcrLine[], layout: Layout, opts: { attach: 'indent' | 
   };
   const score = { exact: 100, repaired: 40, unknown: 0, broken: 0 }[settled.arith] - unparsed.length - (items.length === 0 ? 50 : 0);
   return { receipt, arith: settled.arith, score };
+}
+
+/**
+ * How sure the scanner is of the digits on a line. Its confidence covers the whole line, so on a line that also holds a
+ * name (letters) a garbled name would make a clear price look doubtful; only lines that are mostly numbers count.
+ */
+function numberConfidence(o: OcrLine | undefined): number {
+  if (!o) return 1;
+  return (o.text.match(/[A-Za-z؀-ۿ]/g) ?? []).length <= 2 ? o.confidence : 1;
 }
 
 function lineIndexOf(layout: Layout, t: Token): number {

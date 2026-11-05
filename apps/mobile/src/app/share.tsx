@@ -10,6 +10,7 @@ import { Icon } from '../components/Icon';
 import { Screen } from '../components/Screen';
 import { useTheme } from '../theme/ThemeProvider';
 import { listBills, shareUrl, type MyBill } from '../lib/myBills';
+import { success } from '../lib/haptics';
 
 export default function ShareScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -21,6 +22,7 @@ export default function ShareScreen() {
     void listBills().then((all) => setBill(all.find((b) => b.id === id) ?? null));
   }, [id]);
   useEffect(() => {
+    if (bill) success();
     if (bill) Animated.spring(pop, { toValue: 1, useNativeDriver: true, speed: 8, bounciness: 10 }).start();
   }, [bill, pop]);
 
