@@ -4,6 +4,7 @@ import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { formatAmount } from '@tably/core';
 import { Button } from '../../components/Button';
 import { Avatar, Badge, Callout, ProgressBar, Stat, type Tone } from '../../components/Bits';
+import { Icon } from '../../components/Icon';
 import { Card, ListRow, SectionTitle } from '../../components/Card';
 import { Screen } from '../../components/Screen';
 import { useTheme } from '../../theme/ThemeProvider';
@@ -31,6 +32,8 @@ export default function BillScreen() {
   const [bill, setBill] = useState<AdminBill | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Payments the person has ticked after finding them in their own bank. Nothing is ticked for them.
+  const [picked, setPicked] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     try {
@@ -64,16 +67,41 @@ export default function BillScreen() {
     setBusy(false);
   }
 
-  function ask(p: AdminPayment, cur: string) {
+  /** Confirm every ticked payment, one request each, so a failure on one never hides the others. */
+  function confirmPicked(list: AdminPayment[], cur: string) {
+    const sum = list.reduce((t, p) => t + p.amount, 0);
     Alert.alert(
-      `Did ${formatAmount(p.amount, cur)} arrive?`,
-      `Check your own bank or InstaPay for a transfer from ${p.participant_name} of exactly ${formatAmount(p.amount, cur)}${p.payer_note ? ` (their reference: ${p.payer_note})` : ''}. Their note should read ${p.reference}. Only confirm if you can see it.`,
+      `Confirm ${list.length} ${list.length === 1 ? 'payment' : 'payments'}?`,
+      `That is ${formatAmount(sum, cur)} in total. Only confirm payments you can see in your own bank or InstaPay account.`,
       [
         { text: 'Not yet', style: 'cancel' },
-        { text: 'Not received', style: 'destructive', onPress: () => void act((t) => rejectPayment(id, t, p.id)) },
-        { text: 'Yes, confirm', onPress: () => void act((t) => confirmPayment(id, t, p.id)) },
+        { text: `Yes, confirm ${formatAmount(sum, cur)}`, onPress: () => void doConfirm(list) },
       ],
     );
+  }
+
+  async function doConfirm(list: AdminPayment[]) {
+    const token = await getAdminToken(id);
+    if (!token) return;
+    setBusy(true);
+    const failed: string[] = [];
+    for (const p of list) {
+      try {
+        setBill(await confirmPayment(id, token, p.id));
+      } catch {
+        failed.push(p.participant_name);
+      }
+    }
+    setPicked(new Set());
+    setBusy(false);
+    if (failed.length > 0) Alert.alert('Some could not be confirmed', `${failed.join(', ')}. Pull down to refresh and try again.`);
+  }
+
+  function notReceived(p: AdminPayment) {
+    Alert.alert(`Mark ${p.participant_name}'s payment as not received?`, 'They will be told it was not found and can pay again.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Not received', style: 'destructive', onPress: () => void act((t) => rejectPayment(id, t, p.id)) },
+    ]);
   }
 
   async function remind(b: AdminBill, people: AdminBill['participants'], message: string) {
@@ -160,20 +188,58 @@ export default function BillScreen() {
       </Card>
       {!bill.payee && <Callout tone="warning">No payment details on this bill, so friends cannot pay yet.</Callout>}
 
-      {waiting.length > 0 && <SectionTitle>Needs your check</SectionTitle>}
-      {waiting.map((p) => (
-        <Card key={p.id} tone="warning" style={{ gap: space.md }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
-            <Avatar name={p.participant_name} />
-            <View style={{ flex: 1 }}>
-              <Text style={{ ...font.headline, color: colors.text }}>{p.participant_name} says they sent {formatAmount(p.amount, cur)}</Text>
-              <Text style={{ ...font.footnote, color: colors.textMuted }}>Reference {p.reference}{p.payer_note ? ` · theirs: ${p.payer_note}` : ''}</Text>
-            </View>
-          </View>
-          <Text style={{ ...font.footnote, color: colors.textFaint }}>It is not confirmed until you check your account and tap below.</Text>
-          <Button label="Check and confirm" icon="check" onPress={() => ask(p, cur)} disabled={busy} />
-        </Card>
-      ))}
+      {waiting.length > 0 && (() => {
+        const list = [...waiting].sort((x, y) => x.amount - y.amount);
+        const chosen = list.filter((p) => picked.has(p.id));
+        const chosenSum = chosen.reduce((t, p) => t + p.amount, 0);
+        const all = chosen.length === list.length;
+        return (
+          <>
+            <SectionTitle>Check your bank once</SectionTitle>
+            <Card tone="warning" style={{ gap: space.md }}>
+              <Text style={{ ...font.callout, color: colors.textMuted }}>
+                Open your bank or InstaPay and look for these {list.length === 1 ? 'deposit' : `${list.length} deposits`}. Tick the ones you can see, then confirm them together.
+              </Text>
+              {list.map((p) => {
+                const on = picked.has(p.id);
+                return (
+                  <View key={p.id} style={{ gap: 6 }}>
+                    <Pressable
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: on }}
+                      onPress={() => setPicked((cur0) => { const n = new Set(cur0); if (n.has(p.id)) n.delete(p.id); else n.add(p.id); return n; })}
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}
+                    >
+                      <View style={{ width: 26, height: 26, borderRadius: 8, borderWidth: 2, borderColor: on ? colors.accent : colors.border, backgroundColor: on ? colors.accent : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
+                        {on ? <Icon name="check" size={16} color={colors.accentText} strokeWidth={3} /> : null}
+                      </View>
+                      <Avatar name={p.participant_name} size={36} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ ...font.headline, color: colors.text }}>{p.participant_name}</Text>
+                        <Text style={{ ...font.footnote, color: colors.textMuted }}>Note {p.reference}{p.payer_note ? ` · theirs: ${p.payer_note}` : ''}</Text>
+                      </View>
+                      <Text style={{ ...font.number, color: colors.text }}>{formatAmount(p.amount, cur)}</Text>
+                    </Pressable>
+                    <Text onPress={() => notReceived(p)} style={{ ...font.footnote, color: colors.danger, fontWeight: '600', marginLeft: 26 + 12 + 36 + 12 }}>Not received</Text>
+                  </View>
+                );
+              })}
+              <View style={{ gap: space.sm }}>
+                <Button
+                  label={chosen.length === 0 ? 'Tick what you can see' : `Confirm ${chosen.length} · ${formatAmount(chosenSum, cur)}`}
+                  icon="check"
+                  onPress={() => confirmPicked(chosen, cur)}
+                  disabled={busy || chosen.length === 0}
+                />
+                {list.length > 1 && (
+                  <Button label={all ? 'Untick all' : 'Tick all'} variant="ghost" size="sm" onPress={() => setPicked(all ? new Set() : new Set(list.map((p) => p.id)))} />
+                )}
+              </View>
+              <Text style={{ ...font.footnote, color: colors.textFaint }}>Nothing counts as paid until you confirm it here.</Text>
+            </Card>
+          </>
+        );
+      })()}
 
       <SectionTitle right={!closed ? <Text onPress={() => Alert.prompt('Add someone', 'For a friend who is not using the link. You will pick their items.', (name) => { if (name?.trim()) void act((tk) => addPerson(id, tk, name.trim())); })} style={{ ...font.callout, color: colors.accent, fontWeight: '600' }}>Add someone</Text> : undefined}>
         People
