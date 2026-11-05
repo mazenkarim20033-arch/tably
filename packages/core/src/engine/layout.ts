@@ -276,6 +276,18 @@ export function buildLayout(input: OcrLine[]): Layout {
     return { obs, tokens: lineTokens, v: g.v, text: obs.map((i) => lines[i]!.text.trim()).join('  ') };
   });
 
+  // A receipt that prints whole pounds only ("45", "120", "165"): no price has a decimal part, so the whole numbers
+  // above a quantity-sized value are the prices, and they are money in pounds, not piastres. Without this they were read
+  // as 0.45, 1.20 and 1.65.
+  if (tokens.filter((t) => t.kind === 'amount').length < 2) {
+    for (const t of tokens) {
+      if (t.kind === 'integer' && (t.value ?? 0) >= 5) {
+        t.kind = 'amount';
+        t.value = (t.value ?? 0) * 100;
+      }
+    }
+  }
+
   return { oriented, textHeight, obsV, lines: built, columns: findColumns(built, textHeight), tokens };
 }
 

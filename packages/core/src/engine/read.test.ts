@@ -219,3 +219,19 @@ describe('a total label the recognizer slipped on', () => {
     expect(roleOf('Totem pole', true)).toBe('text');
   });
 });
+
+describe('a receipt that prints whole pounds only', () => {
+  it('reads 45 as 45.00, not 0.45, and finds quantity x price = total by arithmetic', () => {
+    const lines = page([
+      [['الصنف', -0.92], ['الكمية', -0.62], ['السعر', -0.47], ['المبلغ', -0.27]],
+      [['مياه معدنية صغيرة', -0.92], ['3', -0.6], ['15', -0.45], ['45', -0.25]],
+      [['قهوة تركي سينجل', -0.92], ['3', -0.6], ['40', -0.45], ['120', -0.25]],
+      [['الاجمالي', -0.92], ['165', -0.25]],
+      [['اجمالي المبلغ المدفوع', -0.92], ['165', -0.25]],
+    ]);
+    const r = readReceipt(lines);
+    expect(r.items.map((i) => [i.quantity, i.lineTotal])).toEqual([[3, 4500], [3, 12000]]);
+    expect(r.total).toBe(16500);
+    expect(reconcile(r).status).toBe('ok');
+  });
+});
