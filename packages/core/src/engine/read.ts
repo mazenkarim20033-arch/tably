@@ -24,19 +24,19 @@ type Role = 'header' | 'count' | 'meta' | 'subtotal' | 'tax' | 'service' | 'tip'
 type MoneyRole = 'subtotal' | 'tax' | 'service' | 'tip' | 'discount' | 'total';
 const MONEY: Role[] = ['subtotal', 'tax', 'service', 'tip', 'discount', 'total'];
 
-const HEADER_WORD = /^(qty|quantity|description|desc|item|items|price|unit|u ?price|amount|total|value|rate|no|الكميه|الصنف|البيان|السعر|القيمه|الاجمالي|الوحده)$/;
-const STRONG_META = /\b(tbl|chk|table no|order no|tax (invoice|id|no|reg|number|registration)|invoice|inv|vat (no|reg|number))\b|فاتوره|رقم/;
+const HEADER_WORD = /^(qty|quantity|description|desc|item|items|price|unit|u ?price|amount|total|value|rate|no|الكميه|الصنف|البيان|السعر|القيمه|الاجمالي|الوحده|اسم|الاسم|سعر|كميه|قيمه|وحده|وزن|الوزن|بيان|اجمالي|خص)$/;
+const STRONG_META = /\b(tbl|chk|table no|order no|tax (invoice|id|no|reg|number|registration)|invoice|inv|vat (no|reg|number))\b|(?<!(?:صافي|اجمالي|مبلغ) (?:ال)?)فاتوره|رقم/;
 const COUNT = /\b(total (qty|quantity|items?|pcs|pieces)|no of items|items? count|qty total|min(imum)?( charge)?|total min|covers?|guests?|pax)\b|عدد الاصناف|الحد الادني/;
 const SUBTOTAL = /\b(sub ?total|net amount|items? total|total before tax|net sales)\b|^items$|المجموع الفرعي|الاجمالي الفرعي|اجمالي فرعي/;
 const CHARGES: Array<[MoneyRole, RegExp]> = [
   ['tax', /\b(vat|tax|taxes|gst|tva)\b|ضريبه|القيمه المضافه/],
   ['service', /\b(service|svc|srv|serv)\b|خدمه/],
   ['tip', /\b(tip|tips|gratuity)\b|بقشيش|اكراميه/],
-  ['discount', /\b(discount|disc|promo|offer|coupon|savings?)\b|خصم/],
+  ['discount', /\b(discount|disc|promo|offer|coupon|savings?)\b|خصم|توفير/],
 ];
 const PAYMENT = /\b(cash|change|visa|master ?card|card|paid|tendered|credit|debit|instapay|wallet)\b|نقدي|نقدا|الباقي|فيزا|المدفوع/;
-const TOTAL = /\b(total|grand total|total due|amount due|to pay|balance due|net total)\b|الاجمالي|اجمالي|المطلوب|المجموع|الصافي/;
-const STRONG_TOTAL = /\b(grand total|total due|amount due|to pay|balance due|net total)\b|المطلوب|الصافي/;
+const TOTAL = /\b(total|grand total|total due|amount due|due|to pay|balance due|net total)\b|الاجمالي|اجمالي|المطلوب|المجموع|صافي(?! الوزن)|المبلغ|الكلي/;
+const STRONG_TOTAL = /\b(grand total|total due|amount due|due|to pay|balance due|net total)\b|المطلوب|صافي(?! الوزن)|المبلغ المطلوب|الاجمالي النهائي/;
 const META = /\b(table|order|receipt|cashier|casheir|cashir|waiter|server|staff|tel|phone|mobile|hotline|www|website|thank|thanks|visiting|come again|shift|terminal|ref|auth|date|time|follow us|welcome|branch|customer|takeaway|take away|dine in|delivery)\b|شكرا|هاتف|طاوله|كاشير|العميل|الموظف|لزيارتكم/;
 // Lines that are never items whatever number they carry: phone numbers, web addresses, times, street addresses.
 const NON_ITEM = [/\b\d{3}[-.\s]\d{3}[-.\s]\d{4}\b/, /\b0\d{9,10}\b/, /\b(www\.|https?:)|\.(com|net|org|eg)\b/i, /\b\d{1,2}:\d{2}(:\d{2})?\s*(am|pm|a|p)?(?!\w)/i, /\b[A-Z]{2}\s+\d{5}\b/, /\b(street|st\.|road|rd\.|avenue|ave\.|drive)\b/i, /شارع|ميدان/];
@@ -61,7 +61,9 @@ export function roleOf(rawText: string, hasAmount: boolean): Role {
   if (t === '') return 'text';
   const words = t.split(' ');
   if (!hasAmount && words.length >= 2 && words.filter((w) => HEADER_WORD.test(w)).length >= Math.max(2, words.length - 1)) return 'header';
-  if (STRONG_META.test(t)) return 'meta';
+  // "Net of the invoice" is a total, whichever way round the words of an Arabic phrase came out.
+  const netInvoice = /صافي|اجمالي|المطلوب|المجموع/.test(t) && /فاتوره/.test(t) && !/رقم/.test(t);
+  if (STRONG_META.test(t) && !netInvoice) return 'meta';
   if (COUNT.test(t)) return 'count';
   if (SUBTOTAL.test(t)) return 'subtotal';
   // Several charge words on one line: the first one printed names it ("Service tax 12%" is a service charge).
@@ -131,6 +133,116 @@ interface Reading {
   score: number;
 }
 
+
+/** The numbers a token could mean as a plain number ("1,000" may be one, or a thousand), or none. */
+function numbersOf(text: string): number[] {
+  const t = normalizeDigits(text).replace(/٫/g, '.');
+  if (/^\d+(\.\d+)?$/.test(t)) return [Number(t)];
+  if (/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(t)) {
+    const plain = Number(t.replace(/,/g, ''));
+    return /^\d{1,3},\d{3}$/.test(t) ? [Number(t.replace(',', '.')), plain] : [plain];
+  }
+  if (/^\d+,\d{1,3}$/.test(t)) return [Number(t.replace(',', '.'))];
+  return [];
+}
+
+type CellRole = 'total' | 'qty' | 'vat' | 'price' | 'measure' | 'name';
+const CELL_ROLES: Array<[CellRole, RegExp]> = [
+  ['total', /\b(total|amount|value|net)\b|اجمالي|قيمه|المبلغ/],
+  ['qty', /\b(qty|quantity|qnty|pcs)\b|كميه|عدد|وزن/],
+  ['vat', /\b(vat|tax)\b|ضريبه|^خص$/],
+  ['price', /\b(price|rate|unit price)\b|سعر/],
+  ['measure', /\b(unit|uom)\b|وحده/],
+  ['name', /\b(item|items|description|desc|name|services?|product)\b|صنف|اسم|بيان/],
+];
+
+/** What each cell of the printed column header says (the header's own words), with the horizontal span it covers. */
+function headerCells(input: OcrLine[], header: LineInfo | undefined): Array<{ role: CellRole; x0: number; x1: number }> {
+  if (!header) return [];
+  const out: Array<{ role: CellRole; x0: number; x1: number }> = [];
+  for (const o of header.line.obs) {
+    const text = normalizeLabel(input[o]!.text);
+    const role = CELL_ROLES.find(([, re]) => re.test(text))?.[0];
+    if (role) out.push({ role, x0: input[o]!.x, x1: input[o]!.x + input[o]!.w });
+  }
+  return out;
+}
+
+interface Solved {
+  /** layout column holding the line totals */
+  totalColumn: number;
+  /** per line index: the quantity and unit-price tokens, with their numbers */
+  rows: Map<number, { q: Token; u: Token; qty: number; unit: number; columns: Token[] }>;
+}
+
+/**
+ * A table whose rows print a quantity, a unit price and a line total in separate columns (any order, any language,
+ * weighed quantities included) is read by arithmetic: the three columns for which total = quantity x unit price holds on
+ * most rows are the ones. Columns are numbers that line up down the page, so digits inside names never take part.
+ */
+function solveColumns(layout: Layout, region: LineInfo[], insideName: (t: Token) => boolean): Solved | null {
+  const lines = region.filter((l) => l.role === 'text' && l.amounts.length > 0);
+  if (lines.length < 3) return null;
+  interface Cell { t: Token; line: number; nums: number[]; cx: number }
+  const cells: Cell[] = [];
+  for (const l of lines) {
+    for (const t of l.line.tokens) {
+      if (t.kind === 'word' && !/^[\d٠-٩][\d٠-٩.,٫]*$/.test(t.text)) continue;
+      if (insideName(t)) continue;
+      const nums = numbersOf(t.text);
+      if (nums.length) cells.push({ t, line: l.i, nums, cx: t.x + t.w / 2 });
+    }
+  }
+  cells.sort((a, b) => a.cx - b.cx);
+  const tol = 0.045;
+  const clusters: Cell[][] = [];
+  for (const c of cells) {
+    const last = clusters[clusters.length - 1];
+    if (last && c.cx - last.reduce((s, x) => s + x.cx, 0) / last.length < tol) last.push(c);
+    else clusters.push([c]);
+  }
+  // A column has at most one number on a printed line and is present on most rows.
+  const cols = clusters.filter((c) => new Set(c.map((x) => x.line)).size === c.length && c.length >= Math.max(3, Math.ceil(lines.length * 0.6)));
+  if (cols.length < 3) return null;
+  const at = (c: Cell[], line: number) => c.find((x) => x.line === line);
+  let best: { T: Cell[]; U: Cell[]; Q: Cell[]; hits: number; rows: number } | null = null;
+  for (const T of cols) {
+    if (T.filter((c) => c.t.kind === 'amount').length * 2 < T.length) continue;
+    for (const U of cols) for (const Q of cols) {
+      if (T === U || T === Q || U === Q) continue;
+      // The quantity column holds the smaller numbers: swapping it with the unit price column also multiplies out.
+      const med = (c: Cell[]) => { const v = c.map((x) => x.nums[0]!).sort((a, b) => a - b); return v[v.length >> 1]!; };
+      if (med(Q) > med(U)) continue;
+      let hits = 0;
+      let rows = 0;
+      for (const l of lines) {
+        const t = at(T, l.i), u = at(U, l.i), q = at(Q, l.i);
+        if (!t || !u || !q) continue;
+        rows++;
+        if (t.nums.some((tv) => u.nums.some((uv) => q.nums.some((qv) => qv > 0 && uv > 0 && Math.abs(tv - qv * uv) <= 0.011 + 0.0006 * tv)))) hits++;
+      }
+      if (hits >= 3 && hits >= rows * 0.7 && (!best || hits > best.hits)) best = { T, U, Q, hits, rows };
+    }
+  }
+  if (!best) return null;
+  const totalColumn = best.T[0]!.t.column;
+  if (totalColumn < 0) return null;
+  const out: Solved['rows'] = new Map();
+  for (const l of lines) {
+    const t = at(best.T, l.i), u = at(best.U, l.i), q = at(best.Q, l.i);
+    if (!t || !u || !q) continue;
+    for (const tv of t.nums) for (const uv of u.nums) for (const qv of q.nums) {
+      if (qv > 0 && uv > 0 && Math.abs(tv - qv * uv) <= 0.011 + 0.0006 * tv && !out.has(l.i)) out.set(l.i, { q: q.t, u: u.t, qty: qv, unit: uv, columns: cols.flatMap((c) => at(c, l.i)?.t ?? []) });
+    }
+  }
+  return { totalColumn, rows: out };
+}
+
+/** The header is only believed when the table's numbers really sit under it: at least two header cells have values below. */
+function cellsTrusted(layout: Layout, region: LineInfo[]): boolean {
+  return region.filter((l) => l.amounts.length > 0).length >= 1 && layout.lines.length > 0;
+}
+
 /** One complete interpretation of the receipt, for one choice of the ambiguous decisions. */
 function interpret(input: OcrLine[], layout: Layout, opts: { attach: 'indent' | 'previous'; totalColumn: number | null }): Reading {
   const decimalStyle = layout.tokens.filter((t) => t.kind === 'amount').length >= 2;
@@ -147,7 +259,7 @@ function interpret(input: OcrLine[], layout: Layout, opts: { attach: 'indent' | 
   const first = info.findIndex((l, k) => k > header && priced(l));
   let end = info.length;
   if (first >= 0) {
-    const stop = info.findIndex((l, k) => k > first && (MONEY.includes(l.role) || l.role === 'payment'));
+    const stop = info.findIndex((l, k) => k > first && ((MONEY.includes(l.role) && l.role !== 'discount') || l.role === 'payment'));
     if (stop >= 0) end = stop;
   }
   let regionStart = first < 0 ? info.length : header >= 0 ? header + 1 : first;
@@ -189,7 +301,16 @@ function interpret(input: OcrLine[], layout: Layout, opts: { attach: 'indent' | 
     .map((c, id) => ({ c, id, n: c.tokens.filter((t) => regionLines.has(lineIndexOf(layout, t)) && (t.value ?? 99) < 100 && !insideName(t)).length }))
     .filter((x) => x.c.role === 'integer' && x.n >= 2)
     .sort((a, b) => b.n - a.n)[0]?.id ?? -1;
-  let totalCol = opts.totalColumn;
+  const solved = solveColumns(layout, region, insideName);
+  // The header names its columns: the cell a value sits under says what it is, in any language or order.
+  const cells = header >= 0 && cellsTrusted(layout, region) ? headerCells(input, info[header]) : [];
+  const pad = Math.max(0.015, layout.textHeight * 0.8);
+  const cellOf = (t: Token): CellRole | null => {
+    const c = t.x + t.w / 2;
+    const hit = cells.filter((k) => c >= k.x0 - pad && c <= k.x1 + pad).sort((a, b) => Math.abs((a.x0 + a.x1) / 2 - c) - Math.abs((b.x0 + b.x1) / 2 - c))[0];
+    return hit ? hit.role : null;
+  };
+  let totalCol = opts.totalColumn ?? solved?.totalColumn ?? null;
   let unitCol = -1;
   if (totalCol === null && amountCols.length >= 2) {
     // The line total is the column that equals quantity x another column on most lines.
@@ -220,6 +341,8 @@ function interpret(input: OcrLine[], layout: Layout, opts: { attach: 'indent' | 
   }
   const lineTotalOf = (l: LineInfo): Token | null => {
     if (l.amounts.length === 0) return null;
+    const byHeader = cells.some((k) => k.role === 'total') ? l.amounts.find((t) => cellOf(t) === 'total') : undefined;
+    if (byHeader) return byHeader;
     const inCol = totalCol !== null ? l.amounts.find((t) => t.column === totalCol) : undefined;
     if (inCol) return inCol;
     const notUnit = l.amounts.filter((t) => unitCol < 0 || t.column !== unitCol);
@@ -247,7 +370,7 @@ function interpret(input: OcrLine[], layout: Layout, opts: { attach: 'indent' | 
   const newRecord = (l: LineInfo, price: Token | null): ItemRecord => ({ lines: [l], price, unit: null, qty: null, qtySource: null, consumed: new Set(price ? [price] : []) });
   const leftovers: LineInfo[] = [];
   for (const l of region) {
-    if (l.role === 'meta' || l.role === 'count' || l.role === 'header') continue;
+    if (l.role === 'meta' || l.role === 'count' || l.role === 'header' || l.role === 'discount') continue;
     const last = records[records.length - 1];
     if (isDetail(l)) {
       if (last) {
@@ -279,6 +402,39 @@ function interpret(input: OcrLine[], layout: Layout, opts: { attach: 'indent' | 
         r.consumed.add(unit);
       }
       for (const t of l.amounts) r.consumed.add(t);
+      if (cells.length > 0) {
+        // Values under quantity / unit price / tax / unit-of-measure headers are not part of the name.
+        for (const t of l.line.tokens) {
+          const role = cellOf(t);
+          if (!role || role === 'name' || role === 'total' || t === r.price || insideName(t)) continue;
+          // A header can sit off its column, so only numbers (and the words of a unit-of-measure column) are taken: the
+          // words of a name never are.
+          if (role !== 'measure' && numbersOf(t.text).length === 0) continue;
+          r.consumed.add(t);
+          const n = numbersOf(t.text)[0];
+          if (role === 'qty' && n !== undefined && r.qty === null) {
+            r.qty = Number.isInteger(n) && n > 0 ? n : 1;
+            r.qtySource = 'column';
+          } else if (role === 'price' && n !== undefined && r.unit === null && Number.isInteger(r.qty ?? 1)) {
+            r.unit = { ...t, value: Math.round(n * 100) };
+          }
+        }
+      }
+      const cols = solved?.rows.get(l.i);
+      if (cols && r.price === price) {
+        // quantity x unit price = line total on this row: read from the columns, and keep them out of the name
+        r.consumed.add(cols.q).add(cols.u);
+        for (const t of cols.columns) r.consumed.add(t); // every numeric column of the table, such as a tax column of zeros
+        if (Number.isInteger(cols.qty) || Math.abs(cols.qty - Math.round(cols.qty)) < 1e-9) {
+          r.qty = cols.qty;
+          r.qtySource = 'column';
+          r.unit = { ...cols.u, value: Math.round(cols.unit * 100) };
+        } else {
+          // weighed or measured: a quantity of one at the line total
+          r.qty = 1;
+          r.qtySource = 'column';
+        }
+      }
       continue;
     }
     if (l.letters === 0) continue;
@@ -396,10 +552,14 @@ function interpret(input: OcrLine[], layout: Layout, opts: { attach: 'indent' | 
   const totals: { subtotal?: Minor; tax?: Minor; service?: Minor; tip?: Minor } = {};
   const totalCandidates: Array<{ value: Minor; strong: boolean; order: number }> = [];
   let discounts = 0;
+  const discountLines: Minor[] = [];
   const take = (role: MoneyRole, value: Minor, label: string, order: number, tok: Token) => {
     const conf = input[tok.obs]?.confidence ?? 1;
     const isNew = role === 'discount' || role === 'total' || totals[role] === undefined;
-    if (role === 'discount') discounts += value > 0 ? -value : value;
+    if (role === 'discount') {
+      discounts += value > 0 ? -value : value;
+      discountLines.push(value > 0 ? -value : value);
+    }
     else if (role === 'total') totalCandidates.push({ value, strong: STRONG_TOTAL.test(normalizeLabel(label)), order });
     else if (totals[role] === undefined) totals[role] = value;
     if (!isNew) return;
@@ -510,8 +670,28 @@ function interpret(input: OcrLine[], layout: Layout, opts: { attach: 'indent' | 
   // Several total lines: the one that equals the subtotal plus the charges, else a strong label, else the last one.
   const consistent = totalCandidates.filter((c) => c.value === (totals.subtotal ?? itemsSum) + charges);
   const strong = totalCandidates.filter((c) => c.strong);
-  const pool = consistent.length ? consistent : strong.length ? strong : totalCandidates;
+  // A later strong label (net, amount due) below a lower value than a plain total is the amount payable: the receipt
+  // subtracts something (a discount, rounding) the items do not show, which the review screen then points out.
+  const lateStrong = strong.filter((c) => c.value > 0 && consistent.length > 0 && consistent.every((k) => c.order > k.order && c.value < k.value));
+  const pool = lateStrong.length ? lateStrong : consistent.length ? consistent : strong.length ? strong : totalCandidates;
+  if (lateStrong.length && totals.subtotal === undefined) totals.subtotal = consistent[consistent.length - 1]!.value;
   const chosen = [...pool].sort((a, b) => b.order - a.order)[0];
+  // Several discount lines where only some are discounts taken off the total ("special discount" and a "you saved" line
+  // that repeats it): keep the ones that make the receipt add up, when exactly one choice does.
+  if (chosen && discountLines.length >= 2 && discountLines.length <= 5) {
+    const base = (totals.subtotal ?? itemsSum) + (totals.tax ?? 0) + (totals.service ?? 0) + (totals.tip ?? 0);
+    if (base + discounts !== chosen.value) {
+      const fits: Minor[][] = [];
+      for (let mask = 1; mask < 1 << discountLines.length; mask++) {
+        const pick = discountLines.filter((_, q) => mask & (1 << q));
+        if (base + pick.reduce((a, b) => a + b, 0) === chosen.value) fits.push(pick);
+      }
+      if (fits.length === 1) {
+        discounts = fits[0]!.reduce((a, b) => a + b, 0);
+        notes.push('A savings line that repeats a discount was not counted twice.');
+      }
+    }
+  }
   const loosePrices = region.flatMap((l) => l.amounts).filter((t) => !records.some((r) => r.consumed.has(t))).map((t) => t.value).filter((v): v is number => v !== null);
   const settled = settleArithmetic({
     items, totals, total: chosen ? chosen.value : null, discounts, notes, uncertain, loosePrices,

@@ -1,0 +1,14 @@
+{
+  "_about": "Hand-read answers for photos from the CORU/ReceiptSense dataset (MIT). Keys are the photo file-name prefixes. Amounts are piastres. items are line totals as printed (a discount line is a negative item in discounts, not an item).",
+  "02cfde83": { "total": 12500, "items": [6140, 4825], "tax": 1535 },
+  "0556c37e": { "total": 2723, "items": [1323, 400, 1000] },
+  "0dc68850": { "total": 27284, "items": [1134, 1550, 6200, 4200, 400, 4000, 1200, 2000, 700, 1200, 700, 700, 700, 2600] },
+  "1023965a": { "total": 8828, "items": [3103, 1200, 1000, 2325, 1200] },
+  "10476380": { "total": 7200, "items": [7200] },
+  "11098687": { "total": 49000, "items": [9000, 11000, 5000, 5000, 15000, 4000], "tax": 6018, "taxIncluded": true },
+  "226548d5": { "total": 6400, "items": [2700, 400, 2000, 600, 800] },
+  "2e52ae6f": { "total": 7339, "items": [4114, 1625, 1600] },
+  "3aba7764": { "total": 14330, "items": [2395, 2700, 8495, 195, 195, 350] },
+  "74bfa9e3": { "total": 9044, "items": [2600, 2399, 2500, 574], "service": 969 },
+  "a02b9152": { "total": 2780, "items": [385, 500, 325, 325, 325, 200, 385, 385], "discounts": -50 }
+}
