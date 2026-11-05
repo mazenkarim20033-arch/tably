@@ -1,4 +1,4 @@
-import { type Minor, normalizeDigits, parseAmount } from '../money';
+import { type Minor, normalizeDigits, parseAmount, parseAmountSlipped } from '../money';
 import type { ItemFlag, OcrLine, Receipt, ReceiptItem } from '../receipt';
 import { detectCurrency, detectDate, detectMerchant, normalizeArabic } from '../parseReceipt';
 import { digitVariants, dropFreeLines, mark, settleArithmetic, type Marks, type Settled } from '../arithmetic';
@@ -45,7 +45,8 @@ const PERCENT = /^\(?\d{1,2}([.,]\d+)?\s?%\)?:?$/;
 const TIMES = /^[x×*]$/i;
 const ARABIC = /[؀-ۿ]/;
 const LATIN = /[A-Za-z]/;
-const LETTER = /[A-Za-z؀-ۿ]/;
+// any script: a name the recognizer wrote in Cyrillic or Greek look-alikes is still a name, not an empty cell
+const LETTER = /\p{L}/u;
 
 /** Lower case, Arabic letter forms unified, dots inside words dropped ("v.a.t" -> "vat"), other punctuation spaced. */
 export function normalizeLabel(s: string): string {
@@ -113,7 +114,7 @@ function describeLines(layout: Layout, decimalStyle: boolean): LineInfo[] {
       script: arabic + latin === 0 ? 'none' : arabic > latin ? 'arabic' : 'latin',
       x0: named.length ? Math.min(...named.map((t) => t.x)) : Infinity,
       x1: named.length ? Math.max(...named.map((t) => t.x + t.w)) : -Infinity,
-      letters: arabic + latin,
+      letters: (wordText.match(/\p{L}/gu) ?? []).length,
     };
   });
 }
@@ -172,7 +173,7 @@ interface Solved {
   /** layout column holding the line totals */
   totalColumn: number;
   /** per line index: the quantity and unit-price tokens, with their numbers */
-  rows: Map<number, { q: Token; u: Token; qty: number; unit: number; columns: Token[] }>;
+  rows: Map<number, { q?: Token; u: Token; qty: number; unit: number; columns: Token[] }>;
 }
 
 /**
@@ -202,13 +203,19 @@ function solveColumns(layout: Layout, region: LineInfo[], insideName: (t: Token)
     else clusters.push([c]);
   }
   // A column has at most one number on a printed line and is present on most rows.
-  const cols = clusters.filter((c) => new Set(c.map((x) => x.line)).size === c.length && c.length >= Math.max(3, Math.ceil(lines.length * 0.6)));
-  if (cols.length < 3) return null;
+  const oneEach = (c: Cell[]) => new Set(c.map((x) => x.line)).size === c.length;
+  const cols = clusters.filter((c) => oneEach(c) && c.length >= Math.max(3, Math.ceil(lines.length * 0.6)));
+  // A quantity cell is often left blank for a quantity of one (and for weights the shop did not weigh), so that column
+  // only needs a few rows; the rows without it are then read from total / unit price.
+  const qtyCols = clusters.filter((c) => oneEach(c) && c.length >= Math.max(3, Math.ceil(lines.length * 0.4)));
+  if (cols.length < 2 || qtyCols.length < 1) return null;
   const at = (c: Cell[], line: number) => c.find((x) => x.line === line);
+  // Weighed quantities are printed rounded (0.525 kg shown as 0.53), so a non-whole quantity gets 1% of slack.
+  const fits = (tv: number, qv: number, uv: number) => qv > 0 && uv > 0 && Math.abs(tv - qv * uv) <= 0.011 + (Number.isInteger(qv) ? 0.0006 : 0.012) * tv;
   let best: { T: Cell[]; U: Cell[]; Q: Cell[]; hits: number; rows: number } | null = null;
   for (const T of cols) {
     if (T.filter((c) => c.t.kind === 'amount').length * 2 < T.length) continue;
-    for (const U of cols) for (const Q of cols) {
+    for (const U of cols) for (const Q of qtyCols) {
       if (T === U || T === Q || U === Q) continue;
       // The quantity column holds the smaller numbers: swapping it with the unit price column also multiplies out.
       const med = (c: Cell[]) => { const v = c.map((x) => x.nums[0]!).sort((a, b) => a - b); return v[v.length >> 1]!; };
@@ -219,7 +226,7 @@ function solveColumns(layout: Layout, region: LineInfo[], insideName: (t: Token)
         const t = at(T, l.i), u = at(U, l.i), q = at(Q, l.i);
         if (!t || !u || !q) continue;
         rows++;
-        if (t.nums.some((tv) => u.nums.some((uv) => q.nums.some((qv) => qv > 0 && uv > 0 && Math.abs(tv - qv * uv) <= 0.011 + 0.0006 * tv)))) hits++;
+        if (t.nums.some((tv) => u.nums.some((uv) => q.nums.some((qv) => fits(tv, qv, uv))))) hits++;
       }
       if (hits >= 3 && hits >= rows * 0.7 && (!best || hits > best.hits)) best = { T, U, Q, hits, rows };
     }
@@ -230,9 +237,18 @@ function solveColumns(layout: Layout, region: LineInfo[], insideName: (t: Token)
   const out: Solved['rows'] = new Map();
   for (const l of lines) {
     const t = at(best.T, l.i), u = at(best.U, l.i), q = at(best.Q, l.i);
-    if (!t || !u || !q) continue;
-    for (const tv of t.nums) for (const uv of u.nums) for (const qv of q.nums) {
-      if (qv > 0 && uv > 0 && Math.abs(tv - qv * uv) <= 0.011 + 0.0006 * tv && !out.has(l.i)) out.set(l.i, { q: q.t, u: u.t, qty: qv, unit: uv, columns: cols.flatMap((c) => at(c, l.i)?.t ?? []) });
+    if (!t || !u) continue;
+    const columns = [...new Set([...cols, ...qtyCols].flatMap((c) => at(c, l.i)?.t ?? []))];
+    if (q) {
+      for (const tv of t.nums) for (const uv of u.nums) for (const qv of q.nums) {
+        if (fits(tv, qv, uv) && !out.has(l.i)) out.set(l.i, { q: q.t, u: u.t, qty: qv, unit: uv, columns });
+      }
+    } else {
+      // blank quantity cell: whole multiples of the unit price (a blank means one)
+      for (const tv of t.nums) for (const uv of u.nums) {
+        const ratio = uv > 0 ? tv / uv : 0;
+        if (ratio >= 1 && ratio <= 99 && Math.abs(ratio - Math.round(ratio)) < 1e-6 && !out.has(l.i)) out.set(l.i, { u: u.t, qty: Math.round(ratio), unit: uv, columns });
+      }
     }
   }
   return { totalColumn, rows: out };
@@ -310,7 +326,7 @@ function interpret(input: OcrLine[], layout: Layout, opts: { attach: 'indent' | 
     const hit = cells.filter((k) => c >= k.x0 - pad && c <= k.x1 + pad).sort((a, b) => Math.abs((a.x0 + a.x1) / 2 - c) - Math.abs((b.x0 + b.x1) / 2 - c))[0];
     return hit ? hit.role : null;
   };
-  let totalCol = opts.totalColumn ?? solved?.totalColumn ?? null;
+  let totalCol = solved?.totalColumn ?? opts.totalColumn;
   let unitCol = -1;
   if (totalCol === null && amountCols.length >= 2) {
     // The line total is the column that equals quantity x another column on most lines.
@@ -423,16 +439,18 @@ function interpret(input: OcrLine[], layout: Layout, opts: { attach: 'indent' | 
       const cols = solved?.rows.get(l.i);
       if (cols && r.price === price) {
         // quantity x unit price = line total on this row: read from the columns, and keep them out of the name
-        r.consumed.add(cols.q).add(cols.u);
+        if (cols.q) r.consumed.add(cols.q);
+        r.consumed.add(cols.u);
         for (const t of cols.columns) r.consumed.add(t); // every numeric column of the table, such as a tax column of zeros
         if (Number.isInteger(cols.qty) || Math.abs(cols.qty - Math.round(cols.qty)) < 1e-9) {
           r.qty = cols.qty;
           r.qtySource = 'column';
           r.unit = { ...cols.u, value: Math.round(cols.unit * 100) };
         } else {
-          // weighed or measured: a quantity of one at the line total
+          // weighed or measured: a quantity of one at the line total; the printed price is per kilo, not per unit
           r.qty = 1;
           r.qtySource = 'column';
+          r.unit = null;
         }
       }
       continue;
@@ -572,12 +590,19 @@ function interpret(input: OcrLine[], layout: Layout, opts: { attach: 'indent' | 
       mark(marks, path, 'The scanner was not sure how to read this amount.');
     } else if (conf < 0.6) mark(marks, path, 'Hard to read on the photo.');
   };
+  // Amounts printed with a dot where a thousands comma belongs ("11.185.00"): read, but only trusted once the sums confirm.
+  const slips: Array<{ role: MoneyRole; value: Minor }> = [];
   const usedValues = new Set<Token>();
   info.forEach((l, k) => {
     if (inRecords.has(l.i)) return;
     if (MONEY.includes(l.role) && l.amounts.length > 0) {
       const v = rtl || l.script === 'arabic' ? l.amounts[0]! : l.amounts[l.amounts.length - 1]!;
-      if (v.value !== null) take(l.role as MoneyRole, v.value, l.line.text, k, v);
+      const slipped = v.value === null ? parseAmountSlipped(v.text) : null;
+      const amount = v.value ?? slipped;
+      if (amount !== null) {
+        take(l.role as MoneyRole, amount, l.line.text, k, v);
+        if (slipped !== null) slips.push({ role: l.role as MoneyRole, value: slipped });
+      }
       usedValues.add(v);
       return;
     }
@@ -690,6 +715,12 @@ function interpret(input: OcrLine[], layout: Layout, opts: { attach: 'indent' | 
         discounts = fits[0]!.reduce((a, b) => a + b, 0);
         notes.push('A savings line that repeats a discount was not counted twice.');
       }
+    }
+  }
+  if (slips.length > 0) {
+    const confirmed = chosen !== undefined && (totals.subtotal ?? itemsSum) + (totals.tax ?? 0) + (totals.service ?? 0) + (totals.tip ?? 0) + discounts === chosen.value;
+    if (!confirmed) {
+      for (const s of slips) mark(marks, s.role === 'discount' ? 'discounts' : s.role, `A comma looked like a dot, so this was read as ${(s.value / 100).toFixed(2)}. Check it against the receipt.`);
     }
   }
   const loosePrices = region.flatMap((l) => l.amounts).filter((t) => !records.some((r) => r.consumed.has(t))).map((t) => t.value).filter((v): v is number => v !== null);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { allocate, formatAmount, parseAmount } from './money';
+import { allocate, formatAmount, parseAmount, parseAmountSlipped } from './money';
 
 describe('parseAmount', () => {
   it('parses plain and decimal amounts', () => {
@@ -61,5 +61,16 @@ describe('parseAmount rejects OCR garbage instead of guessing', () => {
     expect(parseAmount('1,000,000.5')).toBe(100000050);
     expect(parseAmount('75')).toBe(7500);
     expect(parseAmount('0.00')).toBe(0);
+  });
+});
+
+describe('parseAmountSlipped', () => {
+  it('reads a thousands comma recognized as a dot, and nothing else', () => {
+    expect(parseAmountSlipped('11.185.00EGP')).toBe(1118500);
+    expect(parseAmountSlipped('3.150.83')).toBe(315083);
+    expect(parseAmountSlipped('1,250,00')).toBe(125000);
+    expect(parseAmountSlipped('1,250.00')).toBeNull(); // already a valid amount
+    expect(parseAmountSlipped('31.50831.50')).toBeNull();
+    expect(parseAmountSlipped('1.25.00')).toBeNull();
   });
 });

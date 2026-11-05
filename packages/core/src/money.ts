@@ -97,3 +97,16 @@ export function allocate(total: Minor, weights: number[]): Minor[] {
   }
   return floors.map((f) => f * sign);
 }
+
+/**
+ * "11.185.00" for a printed "11,185.00": thousands groups of three and two decimals with the same mark everywhere. A
+ * comma was read as a dot. `parseAmount` rejects it (irregular groups are usually garbage), so this is a separate,
+ * explicit second reading: it is only used where the receipt's own arithmetic can confirm it, and is flagged when not.
+ */
+export function parseAmountSlipped(input: string): Minor | null {
+  const s = normalizeDigits(input).replace(/[^\d.,]/g, '');
+  const m = /^(\d{1,3}(?:([.,])\d{3})+)\2(\d{2})$/.exec(s);
+  if (!m) return null;
+  const minor = Number(m[1]!.replace(/[.,]/g, '')) * 100 + Number(m[3]);
+  return Number.isSafeInteger(minor) ? minor : null;
+}

@@ -166,3 +166,41 @@ describe('pairing on the reconstructed lines', () => {
     expect(readReceipt(r).total).toBe(12000);
   });
 });
+
+describe('three things real Apple Vision output did to receipts', () => {
+  it('reads a subtotal whose thousands comma came back as a dot, and trusts it only because the sums confirm it', () => {
+    const lines = page([
+      [['Tea', 0.1], ['4,000.00', -0.9]],
+      [['Cake', 0.1], ['4,000.00', -0.9]],
+      [['Subtotal', 0.1], ['8.000.00', -0.9]],
+      [['Service 10%', 0.1], ['800.00', -0.9]],
+      [['Total', 0.1], ['8,800.00', -0.9]],
+    ]);
+    const r = readReceipt(lines);
+    expect(r.subtotal).toBe(800000);
+    expect(r.total).toBe(880000);
+    expect(r.uncertain).not.toContain('subtotal'); // 8,000 + 800 = 8,800 confirms the reading
+    expect(reconcile(r).status).toBe('ok');
+  });
+  it('flags such a subtotal when the sums do not confirm it', () => {
+    const r = readReceipt(page([
+      [['Tea', 0.1], ['4,000.00', -0.9]],
+      [['Cake', 0.1], ['4,000.00', -0.9]],
+      [['Subtotal', 0.1], ['9.000.00', -0.9]],
+      [['Service 10%', 0.1], ['800.00', -0.9]],
+      [['Total', 0.1], ['8,800.00', -0.9]],
+    ]));
+    expect(r.uncertain).toContain('subtotal');
+  });
+  it('keeps a priced row whose name was recognized in look-alike letters from another script', () => {
+    const r = readReceipt(page([
+      [['Tea', 0.1], ['10.00', -0.9]],
+      [['слин', 0.1], ['20.00', -0.9]],
+      [['Coffee', 0.1], ['30.00', -0.9]],
+      [['Subtotal', 0.1], ['60.00', -0.9]],
+      [['Total', 0.1], ['60.00', -0.9]],
+    ]));
+    expect(r.items.map((i) => i.lineTotal)).toEqual([1000, 2000, 3000]);
+    expect(r.unparsed).toEqual([]);
+  });
+});
