@@ -20,22 +20,21 @@ import expo.modules.kotlin.modules.ModuleDefinition
  * ML Kit gives no runner-up readings, so `alternates` is always empty (the engine treats them as optional).
  */
 class TablyVisionModule : Module() {
-  private val recognizer by lazy { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
-
   override fun definition() = ModuleDefinition {
     Name("TablyVision")
 
     AsyncFunction("recognizeText") { uri: String, promise: Promise ->
+      val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
       try {
         val context = appContext.reactContext ?: throw IllegalStateException("No context")
         val upright = loadUpright(context, Uri.parse(uri)) ?: throw IllegalStateException("Could not load the image.")
         // Photos of a receipt are sometimes sideways: when the upright pass finds little text, try the other three turns.
-        var best = read(upright)
+        var best = read(recognizer, upright)
         var bestBitmap = upright
         if (best.lineCount < 4 || best.score / maxOf(best.lineCount, 1) < 0.5) {
           for (degrees in intArrayOf(90, 270, 180)) {
             val turned = rotate(upright, degrees)
-            val pass = read(turned)
+            val pass = read(recognizer, turned)
             if (pass.score > best.score) {
               best = pass
               bestBitmap = turned
@@ -50,15 +49,20 @@ class TablyVisionModule : Module() {
           "height" to h,
         )
         promise.resolve(result)
-      } catch (e: Exception) {
-        promise.reject("ERR_OCR", e.message ?: "Text recognition failed.", e)
+      } catch (e: Throwable) {
+        // The first lines of the stack say where inside the reader it failed, so a failure on a phone can be diagnosed from
+        // the message the review screen shows.
+        val where = e.stackTrace.take(4).joinToString(" < ") { "${it.className.substringAfterLast('.')}.${it.methodName}:${it.lineNumber}" }
+        promise.reject("ERR_OCR", "${e.javaClass.simpleName}: ${e.message ?: "no message"} [$where]", e)
+      } finally {
+        recognizer.close()
       }
     }
   }
 
   private class Pass(val text: Text, val lineCount: Int, val score: Double)
 
-  private fun read(bitmap: Bitmap): Pass {
+  private fun read(recognizer: com.google.mlkit.vision.text.TextRecognizer, bitmap: Bitmap): Pass {
     val text = Tasks.await(recognizer.process(InputImage.fromBitmap(bitmap, 0)))
     val lines = text.textBlocks.flatMap { it.lines }
     // More recognized characters, weighted by how sure the reader is.

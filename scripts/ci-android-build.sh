@@ -13,7 +13,8 @@ npx expo prebuild --platform android --no-install
 cd android
 chmod +x gradlew
 # arm64 covers every phone made in the last several years; building one architecture is much faster and the APK is smaller.
-./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a \
+# Code shrinking is off: it renames and strips classes the on-device text reader needs (it crashed with scrambled names).
+./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a \n  -Pandroid.enableMinifyInReleaseBuilds=false -Pandroid.enableShrinkResourcesInReleaseBuilds=false \
   -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g"
 
 cp app/build/outputs/apk/release/app-release.apk TABLY.apk
